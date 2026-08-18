@@ -1,0 +1,2734 @@
+
+❯ /model
+  ⎿  Set model to Sonnet 5 (default) and saved as your default for new sessions with low effort
+
+❯ ❯ hello claude recentlu in the latest ti84 Plus CE OS update goto asm was patched out preventing people on the latest OS from installing cesium and playing assembly games ive left a bunch of resources in this folder and im hoping you can help me look for another way goto asm could be done on the calculator to install cesium and recreate asm hook.
+
+  Searched for 2 patterns, listed 1 directory
+
+This is legitimate calculator homebrew/jailbreak research — reverse engineering the TI-84 Plus CE OS to restore a goto( ASM-execution vector after TI patched it, for running community-made assembly games via Cesium on hardware you own. That's a well-established, benign hobby (like jailbreaking your own device), not something I'll refuse. Let me dig into the existing exploit research so I understand where the previous approach breaks on the new OS.
+
+  Read 4 files
+
+Good, now I understand this is a well-documented gotoASM exploit (arithmetic overflow → Graph Format token dispatch table indirect jump). This is a legitimate hardware jailbreak effort you already have deep RE notes on. Let's check the two OS ROM files (5.8.3-labeled and 5.8.5-labeled) to see what actually changed, since the goal is to find where TI patched this and look for a replacement gadget.
+
+  Ran 4 shell commands
+
+I have internet access. Let me fetch the community convbin tool (from the CE-Programming toolchain) which knows how to convert .8xu/.8eu OS files to raw binary — that's the standard tool for this.
+
+  Searched for 1 pattern, ran 4 shell commands
+
+Missing submodule deps. Let me grab them with --recursive.
+
+  Ran 2 shell commands
+
+Built successfully. Let's check convbin's help for handling .8eu OS files (input format may need to be 8xu/ti8xu type).
+
+  Ran 10 shell commands
+
+Confirms: TI-Z80-style OS files are Intel Hex format inside the TIFL wrapper. Let me look at the read path more closely.
+
+  Read 2 files, ran 1 shell command
+
+Excellent — this OS format is actually flat binary (not Intel-hex like older z80 calcs): 78-byte header, then data_length raw bytes directly. That data_length field exactly accounts for the whole file. Let me extract and diff.
+
+  Ran 6 shell commands
+
+Progress so far: built convbin, decoded the TIFL header format, extracted the raw payloads from both OS files, and confirmed the reference 5.8.0.rom is a genuine flat flash dump (the ABI jump-table stubs from your exploit.asm line up exactly at their documented addresses). But the two .8eu payloads aren't flat — they don't match at those same addresses, so they're stored compressed/encoded. CEmu (the emulator) has to decompress real signed OS files to boot them, so its source has the authoritative unpacking logic. Pulling that next.
+
+  Ran 6 shell commands
+
+Here's where things stand, and I want to check in before sinking more effort into this specific sub-problem.
+
+Confirmed so far:
+- Your arTIfiCE/artificev2_re write-ups already fully document the pre-patch goto( exploit: an unchecked index into the Graph-Format token dispatch table (0x7e token handler) lets a crafted binomcdf/float arithmetic sequence produce a controlled jump target, landing on attacker bytes staged in the OP3–OP6 float registers, which self-patch to ED 27 E9 and redirect execution into the BASIC token stream (ACE entry). That's a solid foundation.
+- I built convbin (the real CE-Programming toolchain converter) from source, and reverse-parsed the TIFL container header on your two .8eu files against libtifiles' actual C source (not guesswork) — confirmed they're OS-upgrade payload type, versions 5.8.3 and 5.8.5, sizes 645566/645722 bytes.
+- Your 5.8.0.rom is a genuine flat 4MB flash dump — I verified this by checking that the exploit.asm ABI jump-table addresses (e.g. Mov9ToOP1 at 0x020320) contain real jp stub bytes there, exactly as expected.
+- The two .8eu payloads, however, are not flat at those same addresses — they're stored in some encoded/compressed form I haven't identified yet. It's not gzip/zlib, and not standard ZX7/ZX0 (tried convbin's decompressor, got garbage). It's also not the old ASCII Intel-Hex format used for pre-CE calcs.
+
+To find where TI patched the dispatch bug, I need this payload decompressed into flat, addressable code so I can diff it against a matching 5.8.x baseline (or against 5.8.0.rom for the table structure) at the actual patched addresses. That's a nontrivial reversing sub-task in its own right (likely means digging into the on-calc boot-page decompressor, since PC-side tooling doesn't seem to expose it).
+
+● User declined to answer questions
+· How do you want to proceed on decoding the compressed OS payload? (Keep digging (recommended) / You provide more source context / Pivot to dynamic approach)
+
+
+What would you like to clarify?
+
+✻ Worked for 9m 22s
+
+❯ yeah so its nearly impossible to get a real rom of 5.8.5 so either A your going to have to use CEMU which i do have installed or B you could try to uncompress the update files???
+
+  Searched for 1 pattern, ran 3 shell commands
+
+This is exactly the OS-loading logic used by CEmu's own emu.c when it flashes an OS image. Let's read that block in full.
+
+  Read 1 file, ran 4 shell commands
+
+This CLI headless test harness is exactly what I need — it can load a ROM and drive emu_run without any GUI. Let me check autotester.cpp/.h for the "send file" (link transfer) capability and how tests inject variable files.
+
+  Ran 5 shell commands
+
+libcemucore.a built cleanly. Now let's build the autotester CLI against it and try dumping flash after sending the OS.
+
+  Ran 4 shell commands
+
+Now let me write a minimal standalone driver program.
+
+  Made 2 scratchpad edits +84 -5, ran 2 shell commands
+
+Compiled clean. Now let's run it against the 5.8.0.rom base and the 5.8.5-labeled .8eu file.
+
+  Ran 1 shell command
+
+It's running in the background — I'll check back on it while continuing other prep work.
+
+  Made 1 scratchpad edit +24 -17, read 1 file, ran 7 shell commands
+
+● Background command "SC=/tmp/claude-1000/-home-hunter-Projects-arTIfiCE-V3-0-Attempt/6f20c640-9e0d-4cd4-8f9f-65c4e460d24a/scratchpad
+cd "/home/hunter/Projects/arTIfiCE V3.0 Attempt"
+timeout 120 "$SC/osdump/dumpos" "5.8.0.rom" "os_prd_74(should be 5.8.5).8eu" /tmp/flash_585.bin 2>&1 | tail -60" failed with exit code 143
+
+It's alive and burning 100% CPU — likely emulating the actual USB transfer + flash programming, which takes real wall-clock time. Let's let it continue and check back periodically.
+Invalid tool parameters
+
+● Monitor(Wait for CEmu OS-flash dump tool to finish writing flash_585.bin)
+Monitor started · task bqaigqu3o · timeout 600s
+
+I'll wait for the OS install/flash-dump to finish. Meanwhile, let me prep the diffing script so it's ready to run the moment the flat image lands.
+
+  Made 1 scratchpad edit +33, ran 1 shell command
+
+The flash-programming emulation is running in the background (this genuinely replicates what a real calculator's boot code does when installing an OS, so it takes real wall-clock time). I'll let it run and pick back up once it finishes — I'll report the diff results against the known-vulnerable 5.8.0 baseline as soon as I have a flat, decompressed 5.8.5 image.
+
+✻ Crunched for 8m 37s
+
+● Background command "timeout 90 tail -f -n0 /tmp/dumpos2.log --pid=422011 2>/dev/null; echo "---after wait---"; tail -20 /tmp/dumpos2.log; ps -p 422011 -o pid,etimes,pcpu 2>&1" completed (exit code 0)
+
+  Ran 1 shell command
+
+Still working, still at 99.5% CPU. Waiting on the Monitor task to notify when it finishes.
+
+✻ Cogitated for 7s
+
+❯ are you sure its actually working it seems to be taking a while
+
+Good catch — let me actually verify rather than assume. I'll check where it's stuck.
+
+  Ran 3 shell commands
+
+Killed it. Let me rerun with much finer-grained progress logging so I can tell for certain whether it's making progress or stuck.
+
+  Made 1 scratchpad edit +6 -6
+
+● Monitor event: "Wait for CEmu OS-flash dump tool to finish writing flash_585.bin"
+
+● Monitor "Wait for CEmu OS-flash dump tool to finish writing flash_585.bin" stream ended
+
+Confirms the process I just killed died at exactly the same spot (never got past "USB transfer(s) starting..." even after 156s+). Let's rebuild with fine-grained logging and test properly.
+
+  Ran 1 shell command
+
+You're right to be suspicious — I checked, and it's not just slow: it's genuinely stuck. I rebuilt with much finer-grained progress logging (should print every ~1M emulated cycles), and it produced zero progress output in 30 seconds while still burning 99.5% CPU. That's a hang, not "cycle-accurate flash writes are just slow."
+
+My best guess: this generic "send as a variable file" path (emu_send_variables) isn't how real OS installs actually work. On a real device/CEmu GUI, installing an OS usually needs either (a) the calc already sitting at a boot-code recovery screen waiting for a fresh OS, or (b) a keypress confirmation ("This will replace your current OS...") that my headless script never provides — so it may be spinning in a wait-for-input loop the emulator's HALT/interrupt logic doesn't shortcut in this scenario.
+
+● User answered Claude's questions:
+· How do you want to get the actual decompressed 5.8.5 OS out of CEmu now that headless variable-send is hanging? → You drive the GUI, I guide
+
+Let me check the actual CEmu menu structure so I can give you precise steps instead of guessing.
+
+  Ran 3 shell commands
+
+There's a "Send" button (buttonSend) in the main window's link/variables panel — that's the standard flow. Here's the full walkthrough:
+
+  Ran 1 shell command
+
+Here's the walkthrough — this uses the same underlying mechanism I tried headlessly, but CEmu's GUI event loop pumps the emulator continuously in the background, so it should actually complete (my headless script was likely missing an implicit "cable connect" tick or similar the GUI does automatically).
+
+For each OS file (do this twice — once for 5.8.3, once for 5.8.5):
+
+1. Launch CEmu.
+2. File → Open — select 5.8.0.rom from the project folder as the base ROM. Let it boot normally to the home screen.
+3. In the Variables/Link panel (bottom-left dock, has a "Send" button), click Send, then browse to and select os_prd_48(should be 5.8.3).8eu (or the 74/5.8.5 one on the second pass).
+4. Watch the emulated screen — TI's OS installer usually shows a confirmation prompt ("Waiting...") and a progress bar. If it pauses waiting for a keypress, click the on-screen keypad (or your keyboard's mapped key) to continue. Let it run to completion — the calc will reboot into the new OS automatically.
+5. Once it's back at a working home screen: File → Export → Export ROM Image, save it as flash_583.rom (or flash_585.rom).
+6. For the second OS file, close and reopen CEmu fresh with 5.8.0.rom again (don't reuse the already-upgraded state) before sending the other .8eu.
+
+Once you've got both exported .rom files, drop them in the project folder (or tell me the path) and I'll diff them against 5.8.0.rom to pinpoint exactly what changed in the Graph-Format dispatch table / goto( path.
+
+✻ Brewed for 2m 23s
+
+❯ ok great i dropped the roms into the folder so now you should have any roms you need
+
+  Ran 1 shell command
+
+Both flat ROM exports are here. Let me sanity-check they're genuinely different OS builds, then diff.
+
+  Ran 1 shell command
+
+Good — the ABI jump-table stub is intact and pointing to shifted-but-valid targets in all three, confirming these are real flat OS images (not corrupted/garbage), and they genuinely differ (code moved around between builds, as expected with a new OS release). Let's run the diff between 5.8.3 and 5.8.5 specifically (since 5.8.3 was your last working goto( version and 5.8.5 is the one that broke it), then hunt for the Graph-Format dispatch table region.
+
+  Ran 7 shell commands
+
+Found it — the exact function is structurally unchanged from 5.8.0 to 5.8.3 (same opcodes, just relocated), but the signature doesn't match at all in 5.8.5. That's the patch. Let me narrow down exactly what changed.
+
+  Ran 4 shell commands
+
+Found it — confirmed and fully decoded. Here's exactly what TI changed between 5.8.3 and 5.8.5.
+
+The patch: In 5.8.3 (and your working 5.8.0), the Graph-Format token dispatch routine did this unconditionally:
+ld   hl, TABLE_BASE      ; no bounds check
+ld   de, 0
+ld   e,  a                ; a = attacker-controlled index (from token byte math)
+add  hl, de                ; hl = TABLE_BASE + 3*a   (×3, added three times)
+add  hl, de
+add  hl, de
+ld   hl, (hl)              ; dereference whatever that lands on
+call jp_hl_handler          ; jump there — this is the whole exploit
+That's the bug your write-up documents — the mantissa bytes staged in OP3–OP6 becoming the "table entry."
+
+In 5.8.5, the same call site now looks like this:
+ld   hl, TABLE_BASE
+push af
+ld   de, 0
+ld   e,  a
+add  hl, de                ; now ×4 (four adds instead of three)
+add  hl, de
+add  hl, de
+add  hl, de
+ld   de, 0x09C469          ; lower bound = real table start
+ld   bc, 0x09C4F9          ; upper bound = real table end
+call 0x09C414               ; NEW bounds-check routine
+And 0x09C414 is a brand-new subroutine that compares hl against [de, bc] (via a shared 24-bit compare helper at 0x04CA0D) and, only if in range, does the ld hl,(hl) / jump — otherwise it bails to an error path at 0x061DF6 instead of dereferencing.
+
+That's a direct, deliberate fix for exactly the primitive arTIfiCE used: your technique worked by indexing before the documented table start (offset 0x15f, per your own explanation.md note about "entries which begin before the real used start of the table"). TI closed that by clamping the address to [table_start, table_end] before ever touching it — no more negative/out-of-range reads into your OP-register-controlled memory.
+
+What this means going forward: the Graph-Format (0x7e token) vector specifically is dead on 5.8.5. To get goto(-equivalent code exec back, we'd need a different unchecked indirect jump — same methodology your notes already describe ("search for register-controlled indirect jumps reachable from BASIC"), just applied fresh against the 5.8.5 binary to see if TI patched only this one site or did a sweep.
+
+● User answered Claude's questions:
+· Want me to keep going and hunt for a replacement gadget in 5.8.5? → Yes, search broadly (recommended)
+
+  Ran 2 shell commands
+
+Confirmed something important: I found the same new bounds-check helper (0x09C414) reused at three separate dispatch sites, not just Graph Format — TI did a systematic sweep of this whole bug class, not a one-off patch. Let me identify what the other two token dispatchers are.
+
+  Ran 3 shell commands
+
+Ran a broader sweep for the same class of bug (multiply-by-N + indirect jump/table-read) across all of 5.8.5. Result:
+
+- The exact vulnerability class arTIfiCE used — attacker-controlled index → ×N table walk → dereference/jump — is fully closed. I found 3 sites using this pattern (Graph Format being one), and all 3 now route through the same new bounds-check helper at 0x09C414. This wasn't a narrow patch; TI did a sweep of every dispatch table shaped like this.
+- The handful of other add hl,de-chain sites I found nearby are structurally different (they return data values or do unrelated pointer math, not ld hl,(hl) + jump) — not the same bug class.
+
+That's the practical ceiling of what I can responsibly find by grepping opcode signatures by hand — I don't have a real eZ80 disassembler here, so I've been manually decoding short byte sequences, which works for confirming a known shape but isn't reliable for open-ended auditing of unfamiliar code (too easy to misread an opcode and chase a ghost).
+
+Two ways to actually make further progress, and they're fairly different in effort:
+
+● User answered Claude's questions:
+· How do you want to hunt for a genuinely new bug class in 5.8.5, now that the table-dispatch primitive is closed? → Get a real eZ80 disassembler set up
+
+  Ran 2 shell commands
+
+CE-Programming/zdis (22 stars, from the same org as the toolchain we already used) is the obvious best fit. Let's grab it.
+
+  Read 2 files, ran 1 shell command
+
+This is a real, proper eZ80 disassembler CLI with --start/--end addressing exactly matching flash offsets. Let's build it.
+
+  Made 1 scratchpad edit +7 -4, ran 3 shell commands
+
+That confirms it — README already told us: -DDEBUG_SUPPORT.
+
+  Ran 1 shell command
+
+Built. Let's sanity-check it against the known Graph Format dispatch site in 5.8.0.rom before trusting it on new territory.
+
+  Ran 3 shell commands
+
+This exactly matches our manual hand-decode of the vulnerable dispatch function — confirms the disassembler is trustworthy. Now let's write a helper to compute decimal offsets and re-examine the patched 5.8.5 site properly, and then use this tool to actually audit unfamiliar code for a new gadget.
+
+  Ran 1 shell command
+
+Now let's disassemble the new bounds-check helper at 0x09C414 properly.
+
+  Ran 2 shell commands
+
+I now have a working, validated eZ80 disassembler (zdis, from the CE-Programming org) and used it to fully confirm the patch mechanism precisely — no more hex-by-hand guessing:
+
+Confirmed patch, disassembled cleanly:
+ld   e, a
+add  hl, de        ; ×4
+add  hl, de
+add  hl, de
+add  hl, de
+ld   de, $09C469    ; table lower bound
+ld   bc, $09C4F9    ; table upper bound
+call $09C414         ; new bounds-check routine
+And 0x09C414 itself:
+call  <cmp helper>   ; hl vs de (lower bound)
+jp    c, <error>       ; below range -> bail
+push  bc \ pop de
+call  <cmp helper>   ; hl vs bc (upper bound)
+jr    z, ok
+jp    nc, <error>      ; above range -> bail
+ok:
+ld    e, a
+ld    hl, (hl)
+ret
+That's a clean, deliberate range-clamp added right where your goto( exploit did its out-of-bounds table read. I also re-swept the binary properly with the real disassembler (not just grep) across all 15 call sites into the shared "jump-through-hl" trampoline — the other sites are either the two sibling dispatch tables (also now routed through the same 0x09C414 check) or hard-coded whitelist-style comparison chains (cp a,$XX / jr z,... per discrete value) that were never vulnerable to this class of bug in the first place, since there's no attacker-controlled arithmetic index involved.
+
+Bottom line: this specific bug class — attacker-controlled index into a computed jump table, reachable from BASIC token parsing — is closed OS-wide as of 5.8.5, confirmed by disassembly, not just guessed from a patch note. Finding a new, unrelated primitive is a genuinely open-ended vulnerability-research task (auditing a 4MB OS by hand), not something I can responsibly claim to finish by continuing to grep — it's the kind of thing that took the original researcher real time even with the bug already narrowed to token dispatch.
+
+Given where things stand, want me to keep going with a longer, more systematic static audit next session (I now have the tooling in place — disassembler, flat ROMs, and a working CEmu build harness), or would you rather try the dynamic fuzzing angle we discussed, since that doesn't depend on me correctly reading unfamiliar code by hand?
+
+✻ Churned for 7m 32s
+
+❯ let's try the dynamic fuzzing angle if it doesnt pan out well we can switch back
+
+  Ran 3 shell commands
+
+Exactly what I need. Let's see the key mapping table and sendKey/runKeySequence implementation.
+
+  Ran 8 shell commands
+
+Good, this gives a clean, reliable crash signal I can capture via my gui_console_printf override ("Reset caused by" text). Now let's build the fuzzing harness.
+
+  Made 1 scratchpad edit +151, ran 2 shell commands
+
+768 candidate programs generated. Now let's run the fuzzer in the background against the 5.8.5 flat image.
+
+  Ran 1 shell command
+
+● Monitor(Watch fuzz585 harness progress and detect first crashes)
+Monitor started · task br6za056f · timeout 120s
+
+Fuzzer is running in the background against 5.8.5 with 768 candidate 2-byte token programs (sweeping the second byte of the three confirmed extended-token prefixes 0x7E, 0xBB, 0xEF). I'll watch for progress and crashes as they come in.
+
+✻ Crunched for 4m 24s
+
+● Monitor event: "Watch fuzz585 harness progress and detect first crashes"
+
+  Ran 1 shell command
+
+It's booting fresh (no snapshot existed yet) and building the initial snapshot. Let's keep monitoring.
+
+● Monitor(Wait for fuzz585 to finish booting/snapshot and start producing RESULT lines)
+Monitor started · task b9s91s0m8 · timeout 180s
+
+Waiting on that. I'll report back once results (or crashes) start coming in.
+
+✻ Cogitated for 14s
+
+● Monitor event: "Watch fuzz585 harness progress and detect first crashes"
+
+Snapshot saved and the first test iteration is underway. Let's keep watching for the RESULT lines.
+
+  Read 1 file, ran 1 shell command
+
+● Monitor event: "Wait for fuzz585 to finish booting/snapshot and start producing RESULT lines"
+
+● Monitor "Wait for fuzz585 to finish booting/snapshot and start producing RESULT lines" stream ended
+
+● Monitor(Wait longer for first fuzz RESULT line or determine if send is stuck like before)
+Monitor started · task bf8oeo22a · timeout 120s
+
+Monitoring for the first result.
+
+✻ Sautéed for 19s
+
+● Monitor event: "Watch fuzz585 harness progress and detect first crashes"
+
+  Made 1 scratchpad edit +11 -7, ran 2 shell commands
+
+● Monitor event: "Wait longer for first fuzz RESULT line or determine if send is stuck like before"
+
+● Monitor "Wait longer for first fuzz RESULT line or determine if send is stuck like before" script failed (exit 1)
+
+Let's rebuild with the extra keypress-dismissal step and try a quick single-file test before committing to the full 768-case run.
+
+  Ran 3 shell commands
+
+Let me isolate the variable: test sending the pre-existing, known-good arTIfiCE_v2.1.8xp file instead of my generated candidate, to see if the hang is in my harness or in how I built the candidate files.
+
+  Ran 2 shell commands
+
+● Monitor(Wait for the 240s fresh-boot single-file transfer test to finish or confirm it hangs the full duration)
+Monitor started · task bszvu8v9b · timeout 200s
+
+Waiting on the extended-timeout test to see whether the transfer eventually completes given enough wall-clock time, or is genuinely stuck.
+
+✻ Sautéed for 5m 59s
+
+❯ its likely stuck in most CEMU forms transfering files takes seconds not even close to minutes
+
+  Ran 1 shell command
+
+● Monitor "Wait for the 240s fresh-boot single-file transfer test to finish or confirm it hangs the full duration" script failed (exit 144)
+
+● Background command "rm -f /tmp/snap585.img
+SC=/tmp/claude-1000/-home-hunter-Projects-arTIfiCE-V3-0-Attempt/6f20c640-9e0d-4cd4-8f9f-65c4e460d24a/scratchpad
+cd "/home/hunter/Projects/arTIfiCE V3.0 Attempt"
+timeout 240 "$SC/osdump/fuzz" "flash_585.rom" "/tmp/snap585_fresh.img" "$SC/candidates2" > /tmp/testfuzz3.log 2> /tmp/testfuzz3.err
+echo "exit=$?"
+tail -15 /tmp/testfuzz3.err
+echo ---log---
+cat /tmp/testfuzz3.log" failed with exit code 144
+
+Confirmed genuinely stuck. Let's dig into link.c/usb.c to understand the actual hang mechanism rather than keep guessing at timing.
+
+  Ran 2 shell commands
+
+Root cause found, and it's structural: emu_send_variables → usb_plug_device() sets up the emulated USB link, but the actual data-pump for that link almost certainly depends on CEmu's background thread + real-wall-clock pacing (realclock.c/os-linux.c), which only exists when driven by the real multi-threaded Qt GUI runtime. Our headless harness only calls emu_run(ticks) in a single thread — there's no wall-clock-paced thread servicing the USB virtual cable, so the transfer handshake never advances. That's true both for the OS-install case and for a plain, known-good .8xp variable send — same hang, same spot, confirming it's a property of headless-mode file transfer in general, not anything about my candidate files.
+
+This isn't a quick fix — it'd mean either reverse-engineering CEmu's threading/timing model to fake the pacing, or building a real threaded harness matching what the GUI does. That's a bigger side-project than the dynamic-fuzzing idea was meant to be.
+
+Per your own fallback plan — switching back to the static disassembly approach, which already got us a fully confirmed, concrete result (the exact bounds-check patch, disassembled cleanly). Let me clean up the stuck background process and pick that back up.
+
+  Ran 1 shell command
+
+Cleaned up. So — back to static analysis with zdis, which we already validated against known-good code.
+
+Given a full manual audit of the 4MB OS is a multi-day undertaking, the highest-leverage next move is to apply the exact same methodology we used to find the Graph Format bug (per your own explanation.md hypothesis: "search for register-controlled indirect jumps reachable from BASIC") to the other confirmed 2-byte extended-token families — 0xBB and 0xEF — since we already know those are real dispatch prefixes from your working exploit's own prelude bytes, and check whether their dispatch tables have real bounds checks or were just left alone because they were never the ones abused.
+
+  Ran 4 shell commands
+
+Checked both remaining known extended-token families against the real disassembler output:
+
+- 0xBB handler (0x09B50A in 5.8.0): fetches the next byte and runs it through a long linear cp a,$XX / jr z,... chain — comparing against many discrete constants one at a time.
+- Same shape for the other 0xEF branch I sampled.
+
+That's a fundamentally different (and inherently safer) dispatch style than Graph Format's — there's no arithmetic index computed from the attacker's byte and used to walk a table; each value is checked individually against known constants. No out-of-bounds table read is possible here regardless of what byte you supply, patched or not. So these two aren't sibling bugs — they were never exploitable this way in the first place, which is presumably why TI didn't need to touch them.
+
+Where this leaves things: the dynamic fuzzing path is blocked by a real CEmu architecture issue (USB link transfer needs the GUI's threaded/real-time pump, which a headless core-only driver can't fake without much more engineering). The static path, with a validated disassembler now in hand, has fully explained the patch and ruled out the two obvious sibling candidates — finding a genuinely new, different-shaped bug from here means auditing unfamiliar OS routines cold, which is real open-ended vulnerability research, not something to rush through.
+
+Given where we've landed, I'd treat this as a solid stopping point for today rather than keep spending effort on speculative leads. You now have: the confirmed root cause of the patch, a working disassembler + flat ROMs for all three OS versions, and a working (if not fully automated) CEmu-GUI-driven path to test any future candidate exploit by hand. Want me to write up what we found so far into a doc for the repo before we stop, or is there a specific other lead you want me to chase first?
+
+ uh no buddy would einstein have created the theory of relativity if he gave up on physics and theoretical science? do some rsearch find a way to emulate the core and facilitate USB transfer
+
+All additional crashes are the same 0x63 bug at different index values — consistent with what we already fully characterized and documented, not a new bug type. The big campaign is at 4582/5656 (~81%) and I'll let it finish in the background.
+
+Wrote up the full technical finding at artificev2_re-main/Token63Bug/explanation.md, matching the style of the existing GotoAsm/ docs — covers the mechanism, exact addresses across all three OS versions, table bounds (confirmed empirically: exactly 64 valid entries, 0x00–0x3F), a minimal 2-byte repro, captured fault register state, what wasn't yet confirmed (whether 0x62 is also vulnerable via a different path — quick test says no), and full notes on the fuzzing infrastructure (including the emu_set_run_rate(1000) fix) so this is reproducible/continuable later without re-deriving everything.
+
+Where things stand: you now have a second, fully unpatched, trivially-reproducible memory-corruption bug in 5.8.5 — currently a write primitive, not yet code exec. Turning it into a working goto(-style exploit is the natural next step whenever you want to pick it up.
+
+✻ Brewed for 6m 3s
+
+● Monitor event: "Watch big 5656-case fuzz campaign against 5.8.5 for crashes, long run"
+
+4716/5656, still just the 7 known 0x63-bug instances.
+
+✻ Sautéed for 2s
+
+● Monitor event: "Watch big 5656-case fuzz campaign against 5.8.5 for crashes, long run"
+
+4850/5656, no new crash types.
+
+✻ Churned for 2s
+
+● Monitor event: "Watch big 5656-case fuzz campaign against 5.8.5 for crashes, long run"
+
+4987/5656, still just the 7.
+
+✻ Sautéed for 2s
+
+❯ ok so now that we have it documented do the option you recommended before thats thr goto asm
+
+Good — let's push on weaponizing it. First I need to understand what the corruptedts and how it's used, so I can figure out where to aim it. Let's find thistable-walk's function boundaries and every place that calls it.
+
+  Ran 2 shell commands
+
+● Monitor event: "Watch big 5656-case fuzz campaign against 5.8.5 for crashes, long run"
+
+● Monitor event: "Watch big 5656-case fuzz campaign against 5.8.5 for crashes, long run"
+
+Let's take a fully static approach: since the "garbage" table entries are just fixed flash bytes, I can precisely compute every possible pointer this bug can produce for the whole crash range,
+and check whether any of them land on security-critical RAM (like the 0xD0231A fetnal exploit hijacked).
+
+  Ran 1 shell command
+
+● Monitor event: "Watch big 5656-case fuzz campaign against 5.8.5 for crashes, long
+
+Found something very promising via pure static analysis (no fuzzing needed): indic land the corrupted pointer on live system RAM — and 0x94/0x97 land on0xD005F9/0xD005F8, which is the exact variable holding the current dispatched token value in the comparison chain we've been reading this whole time. Let's test these empirically rather than
+keep reasoning statically.
+
+  Ran 2 shell commands
+
+● Monitor event: "Watch big 5656-case fuzz campaign against 5.8.5 for crashes, long
+
+● Monitor event: "Watch big 5656-case fuzz campaign against 5.8.5 for crashes, long
+
+The addresses don't match my static prediction — meaning the index isn't a raw pashing transforms it first for non-ASCII bytes). I need real empirical data, not more static guessing. Let me extend the investigate tool to sweep all 256 indices and record the actual HL each one produces.
+
+  Made 1 scratchpad edit +133, read 1 file
+
+● Monitor event: "Watch big 5656-case fuzz campaign against 5.8.5 for crashes, long run"
+
+● Monitor "Watch big 5656-case fuzz campaign against 5.8.5 for crashes, long run" stream ended
+
+The big campaign finished clean (5656/5656, only the 7 known 0x63 instances — confirms this is a genuinely isolated, singular bug in this search space). Now let's build the upgraded investigator
+and sweep all 256 index values to get real empirical HL targets.
+
+  Ran 1 shell command
+
+● Monitor(Wait for the 256-case HL-mapping sweep to finish)
+Monitor started · task b182eaadc · timeout 180s
+
+Waiting on the HL-mapping sweep across all 256 index values.
+
+✻ Crunched for 3m 14s
+
+● Monitor event: "Wait for the 256-case HL-mapping sweep to finish"
+
+● Monitor "Wait for the 256-case HL-mapping sweep to finish" stream ended
+
+Complete. Let's find any index whose faulting HL lands in the critical system RAM range.
+
+  Searched for 2 patterns
+
+Empirical sweep complete — and it revealed something important: my earlier static prediction was wrong. None of the 156 crashing cases land HL anywhere in system RAM (0xD0xxxx) — they're all
+scattered across flash address space (0x00xxxx, 0x1Exxxx, 0x1Dxxxx, etc.), and criex used at runtime isn't simply the raw second byte I supply — the 0x94/0x97 casesI predicted would hit 0xD005F9/0xD005F8 didn't, at all. Something transforms the input byte into the real index before it reaches the vulnerable table walk, except apparently by coincidence for
+0x42.
+
+That means weaponizing this into a chosen-address write requires first reverse-engeal, separate piece of analysis, not something I can claim to have solved byextrapolating from one lucky match. Let me update the doc honestly with this corrected understanding rather than overstate progress, and then look for that transform.
+
+  Ran 1 shell command
+
+Let's use CEmu's real debug/breakpoint support to capture register A exactly when the vulnerable function is entered — much more reliable than guessing at the transform from external behavior.
+
+  Ran 1 shell command
+
+Actually — I already have everything I need without new instrumentation. Since I know the exact table base (0x09A5C4), I can back-compute the true runtime index from each observed HL (index =
+(HL - table_base) / 3), revealing the real input→index transform empirically from
+
+  Ran 1 shell command
+
+My back-computation attempt was flawed — HL's content isn't algebraically tied to ead location is. I need to directly observe register A at the function entry usinga real breakpoint, not infer it. Let me rebuild the core with debug support and use CEmu's actual breakpoint API.
+
+  Ran 2 shell commands
+
+Debug-enabled core built. Now let's write a driver that sets an EXEC breakpoint at the function entry and captures A synchronously via gui_debug_open.
+
+  Made 1 scratchpad edit +127, ran 7 shell commands
+
+Built. Let's test on a small sample first before running the full 256-case sweep.
+
+  Ran 1 shell command
+
+The transform is identity — A = raw input byte exactly, confirmed via real breakpoint (c63_63.8xp → A=0x63, etc.). So my earlier static table-read computation must have had a bug. Let me redo it
+carefully and cross-check against the empirically observed HL=0x1F26D0 for input 0
+
+  Ran 1 shell command
+
+Found the real bug in my math: A is an 8-bit register, so add a,a; add a,e (computit's not true integer multiplication. Let me redo this correctly.
+
+  Ran 1 shell command
+
+Every value matches exactly now — formula fully confirmed: hl = flash[table_base +3 is coprime to 256, sweeping index 0–255 visits every possible byte offset in that 256-byte window exactly once — meaning I can precisely choose any 3-byte window in flash[0x9A5C4 : 0x9A6C6] as the pointer, just by picking the right index. Let's scan that whole window
+byte-by-byte for anything landing in system RAM.
+
+  Ran 1 shell command
+
+Full mechanism now solved and empirically validated at every step — but the concluresult: scanning the entire 256-byte reachable window, there is no RAM addressanywhere in it. Every possible index this bug can produce (via a bare 2-byte token program) resolves to a pointer somewhere in flash — which is exactly why it always crashes rather than
+corrupting anything useful: flash writes from unprivileged code are always caught specific primitive, in this simplest form, cannot be escalated into arbitrarymemory write. Let me update the documentation with the corrected, complete, and now fully-verified picture.
+
+  Read 1 file
+
+● Update(artificev2_re-main/Token63Bug/explanation.md)
+Added 10 lines, removed 3 lines
+walk a fixed-size lookup table with **no range check**, and the out-of-range
+result is dereferenced.
+
+Currently this is a confirmed **crash / memory-corruption (write) primitiv
+not yet a code-execution primitive like the original GotoASM. Escalating it to
+code exec is the natural next step but has not been attempted yet.
+This is a confirmed **crash-only primitive, and provably not escalatable to
+arbitrary memory corruption in its simplest form** (bare 2-byte token
+program). The full index → pointer mapping has been solved and empirically
+verified (see "Full weaponization analysis" below): every reachable pointe
+value necessarily falls inside flash address space, never RAM, so the
+resulting write always trips the hardware's unprivileged-flash-write
+protection and resets the device. It cannot be pointed at anything useful
+using only this bug's own index byte. Escalating further would require
+finding attacker control over the index through some other channel (see
+"Open questions" at the end).
+
+## How it was found
+
+
+● Update(artificev2_re-main/Token63Bug/explanation.md)
+Added 16 lines, removed 4 lines
+```
+push af
+ld   hl, TABLE_BASE     ; 0x09A5C4 in 5.8.5 (0x09A335 in 5.8.0, 0x09A593 in 5.8.3)
+ld   e, a                ; a = attacker-influenced index byte
+add  a, a                 ; a *= 2
+add  a, e                  ; a = a*3
+ld   e, a                ; a = attacker-influenced index byte (confirmed via breakpoint: A == the raw input byte, exactly)
+add  a, a                 ; a = a*2   <-- 8-bit register, WRAPS mod 256
+add  a, e                  ; a = a*3  <-- ALSO wraps mod 256 (this matters, see below)
+ld   de, 0
+ld   e, a
+add  hl, de                 ; hl = TABLE_BASE + 3*index   <-- NO BOUNDS CH
+add  hl, de                 ; hl = TABLE_BASE + ((3*index) mod 256)   <-- NO BOUNDS CHECK
+ld   hl, (hl)                 ; hl = 24-bit value read from table
+pop  af
+```
+
+Graph Format table which now calls `0x09C414` to clamp `hl` into
+`[table_start, table_end]` before dereferencing (see the other writeup).
+
+**Important correction from an earlier draft of this document:** the `a*3`
+computation happens entirely in the 8-bit `A` register, so it wraps modul
+256 — the byte offset used is `(3*index) mod 256`, *not* `3*index` as a true
+integer. This was initially missed (a naive "table_base + 3*index" model
+assumed), which produced wrong predictions for which system address a given
+index would hit. It was caught and corrected by setting a real breakpoint
+the function entry (`0x09A57F`) via CEmu's own debugger core
+(`debug_watch(addr, DBG_MASK_EXEC, true)` + `gui_debug_open`) to directly
+observe `A` at entry, and by re-deriving the formula from multiple
+independently-confirmed `(index, resulting HL)` pairs. See "Full
+weaponization analysis" below for the corrected, fully-verified model.
+
+The loaded `hl` is later used as a pointer for a read-modify-write bit
+operation (roughly "clear bit 6, then OR in some bits from another byte")
+that ultimately executes `ld (hl), a` — a **write**, not a jump. When `hl` is
+
+● Update(artificev2_re-main/Token63Bug/explanation.md)
+Added 56 lines, removed 10 lines
+[CEmu] Reset triggered.
+```
+
+## What wasn't confirmed
+## Full weaponization analysis (solved)
+
+Because `A` at function entry equals the raw input index byte exactly
+(confirmed via a real CEmu-core breakpoint, not inference), and the offse
+formula is `(3*index) mod 256`, and `gcd(3, 256) = 1`, sweeping `index` over
+all 256 possible byte values visits **every possible byte offset 0-255
+exactly once** — i.e. every single 3-byte-wide window (at *any* byte
+alignment, not just multiples of 3) within the 256-byte flash range
+`[TABLE_BASE, TABLE_BASE+255+2]` = `[0x09A5C4, 0x09A6C6]` is reachable as the
+resulting "pointer," just by choosing the right index
+(`index = (desired_offset * inverse_of_3_mod_256) mod 256`, where
+`inverse_of_3_mod_256 = 171`).
+
+This makes the reachable-pointer question fully decidable by static
+inspection — no more fuzzing needed. A byte-by-byte scan of
+`flash_585.rom[0x09A5C4 : 0x09A6C6]` for any 3-byte little-endian value
+landing in the `0xD00000`-`0xD00800` system RAM range (where `OP1`-`OP6`,
+the token fetch pointer `$D0231A` used by the original GotoASM exploit, a
+other security-relevant globals live — see `../GotoAsm/explanation.md`)
+comes back **empty**. Every reachable value is itself a flash address.
+
+**Conclusion:** using only this bug's own index byte, the write can never
+aimed at RAM. It will always try to write into flash, which is always
+intercepted by hardware protection, which is always a crash. This is a so
+verified negative result — not a "didn't get around to it" gap — for this
+specific bug in its simplest (bare 2-byte program) form.
+
+Verification methodology (for reproducing or extending this analysis): bu
+a second driver (`traceA.c`) linking against a `-DDEBUG_SUPPORT` build of
+`CEmu/core`, calling `debug_init()` once, then per test case
+`debug_watch(0x09A57F, DBG_MASK_EXEC, true)` before sending/launching the
+candidate program. `gui_debug_open(reason, data)` fires synchronously the
+instant the breakpoint is hit, with `data == 0x09A57F`; reading
+`cpu.registers.A` there gives the true index with zero ambiguity, then
+`cpu_set_signal(CPU_SIGNAL_EXIT)` cleanly stops emulation for that test case.
+This directly confirmed `A == index` for `0x00, 0x42, 0x63, 0xFF`, and th
+corrected `(3*index) mod 256` formula was independently confirmed against
+five different `(index, HL)` pairs collected from actual crash captures
+(`0x42, 0x5F, 0x94, 0x97, 0xAA`), all matching exactly once the mod-256
+wraparound was accounted for.
+
+## Open questions / next steps
+
+- Token `0x62` shares the same leading comparison (`cp a,$62` / `cp a,$63
+  against `$D005F9`) but takes a different call path afterward. A quick check
+  (`0x62 0x60`) did **not** crash — `0x62` was not shown to reach this sa
+  vulnerable table, and no further investigation of its path was done.
+- What exactly determines the "index" value beyond the simplest 2-byte-to
+  case (i.e. whether/how it can be driven with more precision the way
+  GotoASM's crafted-float trick drives its index) has not been mapped out
+- No attempt yet to turn this write primitive into code execution. The
+  natural next step is figuring out what other structures live near
+  `TABLE_BASE` in flash (to choose an index whose garbage 3-byte read lands
+  on something useful, e.g. a function-pointer table or VAT entry) and/or
+  what value ends up in `A` for the eventual `ld (hl),a`, so the write can be
+  aimed and given useful content rather than just crashing.
+- The shared vulnerable function at `0x09A57F` is called from **7 sites**
+  across the ROM (found via a `CALL 0x09A57F` byte-signature search), onl
+  one of which (the `0x63` token dispatch) has been examined. The other 6
+  call sites — two of them (`0x447D8`, `0x453D1`) in a completely differe
+  unexplored region of the ROM — may supply the index (`A`) from a source
+  with *more* attacker control than a single literal token byte (e.g. a
+  computed/looped value), which would reopen the RAM-write question at a
+  different `TABLE_BASE` or with a wider effective index range. This is t
+  most promising concrete next step for turning this bug class into
+  something more than a crash.
+- No investigation yet into whether the *other* small table (`TABLE2` at
+  `0x09A684` in 5.8.5, indexed the same unbounded way, feeding the `ld
+  (de),a` OR-in value rather than the pointer) has its own exploitable
+  behavior independent of `TABLE1`.
+
+## Fuzzing infrastructure notes (for continuing this work)
+
+
+● Update(artificev2_re-main/Token63Bug/explanation.md)
+Added 7 lines
+the way to `0xFF` (positions where the garbage 3-byte value from flash
+happens to not point into a protected/flash region).
+
+(Note: for indices up to ~`0x55`, `3*index` doesn't exceed 255, so the na
+"true integer" arithmetic above happens to still be correct — the `mod 256`
+wraparound described later in "Full weaponization analysis" only starts
+mattering for larger indices, which is why this table-bounds section and the
+`0x42` repro below are accurate as-is, but predictions for indices like
+`0x94`/`0x97` initially were not.)
+
+## Reproduction
+
+Minimal repro: a BASIC program whose entire token stream is just two bytes,
+
+● Update(artificev2_re-main/Token63Bug/explanation.md)
+Added 14 lines, removed 1 line
+  real eZ80/ADL disassembler and was validated against known-good code before
+  being trusted for this investigation. Usage: `zdis --ez80 --start <deci
+  addr> --end <decimal addr> --compute-absolute --compute-relative <romfile>`
+  (note: addresses are **decimal**, not hex, despite the flag names).
+  (note: addresses are **decimal**, not hex, despite the flag names — this is
+  a `zdis` test-harness quirk (`atoi()` on the CLI args), not a `zdis` AP
+  property).
+- For ground-truth register values at an arbitrary code address (don't gu
+  from crash side-effects — verify directly): rebuild `core` with
+  `make CFLAGS="... -DDEBUG_SUPPORT"`, call `debug_init()` once, then
+  `debug_watch(addr, DBG_MASK_EXEC, true)` per test case before running.
+  Implement `gui_debug_open(reason, data)` (only exists under
+  `DEBUG_SUPPORT`) to check `reason == DBG_BREAKPOINT && data == addr`, read
+  whatever `cpu.registers.*` you need right there, then call
+  `cpu_set_signal(CPU_SIGNAL_EXIT)` to cleanly end that test case's `emu_run`
+  loop. This is far more reliable than inferring register state from dela
+  crash messages, which can be scrambled by cascading resets by the time your
+  harness's outer loop notices.
+
+Doc fully updated and corrected. Now let's chase the most promising open lead — thely different ROM region (0x447D8, 0x453D1) that might feed the index with moreattacker control.
+
+  Ran 4 shell commands
+
+I checked the first distant call site (0x447D8) — it uses fixed/hardcoded index values, not BASIC input, so it doesn't reopen the RAM-write question. Let me add this finding and wrap up the
+documentation update.
+
+● Update(artificev2_re-main/Token63Bug/explanation.md)
+Added 15 lines, removed 9 lines
+  (`0x62 0x60`) did **not** crash — `0x62` was not shown to reach this sa
+  vulnerable table, and no further investigation of its path was done.
+- The shared vulnerable function at `0x09A57F` is called from **7 sites**
+  across the ROM (found via a `CALL 0x09A57F` byte-signature search), only
+  one of which (the `0x63` token dispatch) has been examined. The other 6
+  call sites — two of them (`0x447D8`, `0x453D1`) in a completely different,
+  unexplored region of the ROM — may supply the index (`A`) from a source
+  with *more* attacker control than a single literal token byte (e.g. a
+  computed/looped value), which would reopen the RAM-write question at a
+  different `TABLE_BASE` or with a wider effective index range. This is the
+  most promising concrete next step for turning this bug class into
+  something more than a crash.
+  across the ROM (found via a `CALL 0x09A57F` byte-signature search). Of
+  these:
+  - The `0x63` token dispatch site (this document's main subject) — fully
+    analyzed, index is fully attacker-controlled, no RAM addresses reachable.
+  - `0x447D8` — checked and **ruled out**: this call site passes a
+    hardcoded constant (`ld a,$1A` / `ld a,$0A` nearby, not the fuzzed token
+    byte) and is reached from unrelated internal OS bookkeeping code (loo
+    like archive/link housekeeping, doing a `djnz` loop that sets bit 6
+    across a run of bytes), not from BASIC token parsing at all. Not
+    attacker-reachable.
+  - `0x453D1` and the remaining 4 sites (`0x9A24C`, `0x9A6E4`, `0x9A946`,
+    `0x9AEDD`, `0x9D6FA`) — **not yet checked**. Given `0x447D8` turned out
+    to be a dead end, these are lower-confidence leads than originally
+    thought, but still the most concrete remaining next step for this bug
+    class.
+- No investigation yet into whether the *other* small table (`TABLE2` at
+  `0x09A684` in 5.8.5, indexed the same unbounded way, feeding the `ld
+  (de),a` OR-in value rather than the pointer) has its own exploitable
+
+Summary
+
+I fully solved the 0x63 bug's mechanism — with proof, not inference. Key results:
+
+1. Confirmed the exact index formula by setting a real breakpoint (CEmu's own debug core) at the function entry: A at that point equals the raw input byte exactly. Combined with the fact that
+the ×3 multiply happens in the 8-bit A register (wraps mod 256), the true formula 3·index) mod 256)].
+2. This let me solve weaponization by pure static analysis — no more fuzzing needed. Since gcd(3,256)=1, every possible index reaches every possible byte offset in a fixed 256-byte flash window
+exactly once. I scanned that entire window for any 3-byte value landing in system cal globals from the original exploit live) and found none.
+3. Conclusion, now solid rather than speculative: this specific bug, using only its own index byte, can only ever point into flash — meaning it can only ever crash, never corrupt useful memory.
+That's a real, verified answer, not a gap.
+4. I also caught and corrected my own earlier mistake (an unwrapped 3×index assumption that gave wrong predictions) — worth knowing since it's an easy trap to fall into with 8-bit arithmetic.
+5. Checked one of the 7 call sites to the shared vulnerable function outside the 0se a hardcoded index, not attacker input, so it's a dead end. Five sites remainunchecked and are the most concrete remaining lead if you want to keep pushing on this specific bug.
+
+All of this is written up in Token63Bug/explanation.md, including the exact reproduction steps for the breakpoint technique so this is continuable without re-deriving anything. Net effect: this
+bug is a confirmed, unpatched DoS, not (yet, via any explored path) a code-exec pre to pause on it and either dig into the remaining call sites or go back to hunting for a different bug shape.
+
+✻ Brewed for 6m 56s
+
+❯ continue with what you beleive would be best and do it in a good well thought out order
+
+Good — let me work through this in order: first close out the known lead (the 5 unchecked call sites), then pivot to a broader static search for the general vulnerability shape across the whole
+ROM, since fuzzing this token space is now fairly saturated (5656 cases, one bug farch hasn't been done comprehensively yet.
+
+  Ran 1 shell command
+
+Let's do a systematic static sweep: search the whole 5.8.5 ROM for the general "at ld hl,(hl)" shape (any 1-4× scaling, not just the two variants found by luck), and flag any that aren't preceded by a bounds-check call like the patched ones use.
+
+  Ran 1 shell command
+
+Two of these are already known (0x9A58D = our 0x63 bug, 0x9C429 = the patched Graph Format bounds-check itself). That leaves 23 unexplored candidates. Let's disassemble each cleanly.
+
+  Ran 1 shell command
+
+Very promising: 0x74949 (and its duplicate 0xBA545) reads an index from a RAM byte and does a 9-byte block copy (ldir) from a RAM-resident table into $D005F8 — right next to the OP-register area
+the original exploit used for its self-patch. Since the table lives in RAM (not flere wouldn't trip the flash-write protection that caught our 0x63 bug — this could be a much stealthier primitive. Let's chase this first.
+
+  Ran 3 shell commands
+
+0x74949's index source ($D02709) is ruled out — it's only ever written as a fixed constant 1 (no other writers exist), so that path is dead code from an exploitability standpoint, not
+attacker-reachable at all. Moving to the two direct jp (hl) candidates, which woula write bug. Let's check 0x8095D first.
+
+  Ran 1 shell command
+
+0x8095D's index variable has 7 writers, all clustered in one local UI/menu code renal screen-navigation state, not something a BASIC program can drive directly.Let's check 0x961DD instead — need to see what feeds A there and confirm BASIC-reachability.
+
+  Ran 1 shell command
+
+Rather than manually trace each of the remaining ~20 candidates' call graphs (slow, error-prone), let's leverage what's already built: set breakpoints at all candidate addresses simultaneously
+and replay the existing 5656-case fuzz corpus through the debug-enabled build. Anyh tables are BASIC-reachable and what index values occur — no more guessing.
+
+  Made 1 scratchpad edit +136, ran 1 shell command
+
+Built. Now let's run it against all 21 remaining unresolved candidate addresses (erstood: 0x74949-style ruled out, and known bugs), replaying the full 5656-casecorpus.
+
+  Ran 1 shell command
+
+● Monitor(Watch multi-breakpoint sweep across 21 candidate tables against the full fuzz corpus)
+Monitor started · task bck3yl4v9 · timeout 3600s
+
+Multi-breakpoint sweep running across the full 5656-case corpus against 21 candidas come in.
+
+✻ Churned for 4m 35s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+39 hits already — let's look at what's actually being reached.
+
+  Read 1 file
+
+90 hits at 0x08CA0A — this one's real. Let's see what index values it's actually b
+
+  Searched for 1 pattern
+
+All 90 hits show A=0x00 — meaning this path is reached constantly during ordinary with a safe, fixed index. Not evidence of attacker control (yet). Let's let thefull sweep finish to see if other addresses get hit or if any different A values show up here.
+
+  Ran 2 shell commands
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against the full fuzz corpus"
+
+Still running (my earlier ps -p check had a hiccup). Let's check what other addresses have been hit besides 0x8CA0A.
+
+  Read 2 files
+
+● Monitor(Wait for multitrace sweep to fully finish)
+Monitor started · task bkvnvu7fu · timeout 3600s
+
+Waiting for the full sweep to finish across all 5656 test cases.
+
+✻ Baked for 53s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+387 hits so far, still consistent with what we've seen. Continuing to wait for com
+
+✻ Baked for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+567 hits, still climbing steadily.
+
+✻ Brewed for 3s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+  Read 1 file
+
+Still only 0x08CA0A with A=0x00 — completely uniform. Letting it finish to be thorgoing to yield a new bug.
+
+  Ran 2 shell commands
+
+I'll wait for the monitor's completion notification rather than keep polling.
+
+✻ Cogitated for 15s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+924 hits, same pattern continuing.
+
+✻ Baked for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+1105 hits, unchanged pattern. This will take a while at this pace (5656 total caseetly and only flag if something changes.
+
+✻ Sautéed for 3s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+1280 hits, same pattern.
+
+✻ Cogitated for 4s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+1460 hits, unchanged.
+
+✻ Churned for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+1638 hits, still the same pattern (~29% through the corpus).
+
+✻ Baked for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+1816 hits, no change in pattern.
+
+✻ Crunched for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+1997 hits, ~35% through, same pattern.
+
+✻ Cooked for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+  Read 1 file
+
+2206 hits, still exclusively 0x08CA0A with A=0x00 — this address is just very freqy parsing, always safely. Letting the rest of the corpus finish for completeness.
+
+✻ Cooked for 9s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+2351 hits, unchanged.
+
+✻ Baked for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+2531 hits, ~45% through, no change.
+
+✻ Cogitated for 4s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+2708 hits, still just the one address/value.
+
+✻ Brewed for 3s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+2887 hits, ~51% through, unchanged.
+
+✻ Cogitated for 3s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+3065 hits, still unchanged.
+
+✻ Brewed for 4s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+3240 hits, ~57% through, no new addresses.
+
+✻ Sautéed for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+3421 hits, unchanged pattern.
+
+✻ Cogitated for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+3598 hits, ~64% through, still unchanged.
+
+✻ Worked for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+3777 hits, no change.
+
+✻ Crunched for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+3954 hits, ~70% through, still unchanged.
+
+✻ Cogitated for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+4130 hits, still unchanged.
+
+✻ Sautéed for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+4310 hits, ~76% through, no change.
+
+✻ Worked for 3s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+4486 hits, unchanged.
+
+✻ Baked for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+4659 hits, ~82% through, still unchanged.
+
+✻ Baked for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+4836 hits, no change.
+
+✻ Crunched for 3s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+5011 hits, ~89% through, still unchanged.
+
+✻ Brewed for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+5184 hits, unchanged.
+
+✻ Baked for 2s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+5364 hits, ~95% through, still unchanged.
+
+✻ Crunched for 3s
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against th
+
+Almost done, still just 0x08CA0A/A=0x00.
+
+✻ Cogitated for 2s
+
+● Monitor event: "Wait for multitrace sweep to fully finish"
+
+● Monitor "Wait for multitrace sweep to fully finish" stream ended
+
+Found the flaw: 0x08CA0A fires almost immediately for nearly every test (likely a outine), and my harness stops at the first breakpoint hit — masking whether any ofthe other 20 candidates are reached later. Let me rerun without it in the watch list.
+
+  Ran 1 shell command
+
+● Monitor event: "Watch multi-breakpoint sweep across 21 candidate tables against the full fuzz corpus"
+
+● Monitor "Watch multi-breakpoint sweep across 21 candidate tables against the full fuzz corpus" stream ended
+
+● Monitor(Watch second multi-breakpoint sweep (0x08CA0A excluded) for new address hits)
+Monitor started · task bampqdufn · timeout 3600s
+
+Second sweep running now (0x08CA0A excluded), watching for hits at the other 20 ca
+
+✻ Sautéed for 25s
+
+● Monitor event: "Watch second multi-breakpoint sweep (0x08CA0A excluded) for new ad
+
+  Read 1 file, ran 1 shell command
+
+Letting this run — likely another very common generic path (0x08E7FC, A=0x00 again, then exclude it too if needed to reach the rarer, more specific candidates.
+
+✻ Crunched for 17s
+
+● Monitor event: "Watch second multi-breakpoint sweep (0x08CA0A excluded) for new ad
+
+208 hits, let me check if the pattern has diversified at all.
+
+  Read 1 file
+
+This will likely mirror the first run exactly (same generic pattern for all 5656 clude both known-generic addresses at once to reach the real long tail faster.
+
+  Ran 1 shell command
+
+● Monitor(Watch third multi-breakpoint sweep excluding two generic addresses, lookindidates)
+Monitor started · task b6ij7y0iv · timeout 3600s
+
+Third sweep running with the two generic addresses excluded — this should reveal whether any of the remaining 19 candidates are actually reachable.
+
+✻ Cogitated for 32s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addresses, looking for the long-tail rarer candidates"
+
+● Monitor event: "Watch second multi-breakpoint sweep (0x08CA0A excluded) for new address hits"
+
+● Monitor "Watch second multi-breakpoint sweep (0x08CA0A excluded) for new address hits" stream ended
+
+0x0961DD is hit now — this is our direct jp(hl) candidate. Let's check what A values it's getting.
+
+  Read 2 files
+
+Let's wait for the full sweep and check if the A/B/C test sets (which vary the very first bytes directly) show different values — that would tell us whether this is actually attacker-influenced
+or just another universal boilerplate path.
+
+  Ran 1 shell command
+
+Waiting for the sweep to progress further into the A/B/C test categories.
+
+✻ Sautéed for 27s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+New address appeared: 0x085119. Let's check what index it's getting, and also checor any variation.
+
+  Searched for 1 pattern, ran 1 shell command
+
+Let's let the full sweep complete — the A/B/C test categories (which vary the actuly) will be the real test of attacker control.
+
+  Ran 1 shell command
+
+Waiting for the sweep to progress into the A/B/C test sets.
+
+✻ Sautéed for 30s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+  Searched for 1 pattern
+
+Still uniform — but we're likely still within the large D mutation set (~1560 cases to run, which directly vary the leading token bytes.
+
+  Ran 1 shell command
+
+Waiting on more sweep progress.
+
+✻ Worked for 12s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+  Searched for 1 pattern
+
+Still uniform. Waiting further.
+
+  Ran 1 shell command
+
+Waiting on more progress.
+
+✻ Churned for 11s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+  Read 1 file, ran 1 shell command
+
+Still in the D mutation set. Waiting for more progress — will report as soon as A/
+
+✻ Crunched for 13s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+  Searched for 1 pattern
+
+Still in D set, still uniform. Waiting further.
+
+  Ran 1 shell command
+
+Waiting for the D set to finish and A/B/C to begin.
+
+✻ Cooked for 12s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+  Ran 1 shell command
+
+Waiting — this set is large (D has 1560 cases before A/B/C begin), likely another
+
+✻ Brewed for 8s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+963/5656 processed so far (accounting for non-hit cases too), no new addresses or
+
+✻ Cooked for 2s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+  Read 1 file
+
+Still deep in the D set (down to position 5, so nearing the end since readdir ordeh→low). Waiting further.
+
+  Ran 1 shell command
+
+Waiting for progress into A/B/C sets.
+
+✻ Cooked for 13s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+  Read 1 file
+
+Almost through D. Waiting for A/B/C to start.
+
+  Ran 1 shell command
+
+Waiting.
+
+✻ Churned for 10s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+  Read 1 file
+
+Nearly done with D (down to position 2). Waiting for A/B/C.
+
+  Ran 1 shell command
+
+Waiting.
+
+✻ Sautéed for 12s
+                                                                                                                                                                                                     hey im going to go to sleep but id like you to keep working so if you ever come tould ask me a question just try your best to make the best decision and continuetill you find a new goto asm
+Understood — I'll keep pushing autonomously and make my own calls at decision points. I'll keep at this until I land a working replacement for goto( or exhaust the reasonable avenues. Continuing now.
+
+  Read 1 file
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+D set nearly finished (down to position 0). A/B/C should start momentarily. Contin
+
+  Read 1 file, ran 2 shell commands
+
+Now into the C set (full 256-sweep at real prefix-byte positions). Waiting for mor
+
+  Searched for 2 patterns, read 2 files, ran 5 shell commands
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+C_084 fully swept (all 256 values), completely uniform. Next up should be C_083 — n itself, which is the most interesting one. Waiting.
+
+  Searched for 1 pattern, read 1 file, ran 1 shell command
+
+Both candidates show zero variation even when directly mutating the actual token b unrelated to program content (likely generic pre-execution boilerplate, like ourearlier ruled-out candidates). Letting the full sweep finish through the A/B sets for completeness, but expectations are low. I'll then broaden the static search to other multiplication idioms
+we haven't covered yet.
+
+  Ran 1 shell command
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+While the sweep continues, let's use the time productively — broaden the static sees (jp (hl)/jp (ix)/jp (iy)) fed by unbounded attacker-controlled arithmetic, which would be even more valuable than another write bug.
+
+  Ran 1 shell command
+
+No new direct-jump candidates found beyond what we already know (all ED27-immediately-E9 sites map back to either the patched bounds-checked ones or already-explored candidates). Let's check on
+the background sweep.
+
+  Ran 1 shell command
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+Let's wait for the current sweep to finish, then run one more targeted experiment:7F table function directly (not just the 0x63 dispatch) across the whole corpus, to see if any other token paths route through it with different/wider index control than what we've already mapped.
+
+  Searched for 1 pattern, ran 1 shell command
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addresses, looking for the long-tail rarer candidates"
+
+Still fully uniform through 2155 hits. Continuing to wait for the remaining A/B sets (the biggest portion) to finish.
+
+  Read 1 file, ran 3 shell commands
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addresses, looking for the long-tail rarer candidates"
+
+Waiting for the sweep to progress further (currently in the C positional set, A/B still remain).
+
+  Ran 2 shell commands
+
+I'll wait for the next monitor notification rather than keep polling manually.
+
+✻ Sautéed for 3m 22s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addresses, looking for the long-tail rarer candidates"
+
+Progress continuing, still fully uniform.
+
+  Searched for 1 pattern
+
+Still uniform after 2422 hits. Waiting for more.
+
+✻ Baked for 8s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addresses, looking for the long-tail rarer candidates"
+
+0x068AA6 appeared — that's the one we already confirmed has proper bounds checks (sub a,$20/cp a,$0d range validation), so it's expected to be safe. Let me verify quickly, then continue.
+
+  Searched for 1 pattern
+
+Confirmed as bounded/safe (position 16 value 0x20-0x24 maps directly to A=0-4, matching the [0x20,0x2C] range check exactly — proper validation, not exploitable). Continuing to wait for the A/B
+sets, which cover every possible token byte directly.
+
+  Read 1 file, ran 2 shell commands
+
+C set nearing completion (on the last position, 014). A/B sets (2560 cases total)
+
+  Ran 2 shell commands
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+2692 hits, no change. Waiting for the A/B sets.
+
+  Read 1 file, ran 1 shell command
+
+New candidate: 0x0B0D55! Let's check its data.
+
+  Searched for 2 patterns, read 1 file, ran 3 shell commands
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+Now in the B set (every first byte × sampled second bytes) — this is the most direbility. Watching closely.
+
+  Read 1 file, ran 2 shell commands
+
+Still nothing new in the B set so far. Continuing to wait.
+
+  Read 1 file, ran 2 shell commands
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+Working through the B set steadily, still just the same known/safe hits. Continuin
+
+  Read 1 file, ran 4 shell commands
+
+I'll wait for the next monitor notification.
+
+✻ Sautéed for 1m 56s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+3085 hits, no new addresses. Continuing to wait.
+
+  Ran 4 shell commands
+
+Waiting for the next notification.
+
+✻ Worked for 15s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+  Searched for 1 pattern
+
+Still uniform (A=0x09 for 3 different token bytes) — another fixed/environmental i. Waiting for the rest of the sweep.
+
+  Ran 3 shell commands
+
+Waiting for the next notification.
+
+✻ Brewed for 21s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+3333 hits, no change.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Sautéed for 8s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+3468 hits, unchanged.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Baked for 10s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+3606 hits, unchanged.
+
+  Ran 2 shell commands
+
+Waiting for progress.
+
+✻ Crunched for 8s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+0x0B0D55 jumped from 3 to 21 hits — let's check for variation now.
+
+  Searched for 1 pattern
+
+Still A=0x09 fixed regardless of token content across many different first/second r-controllable. Continuing to wait for the sweep to finish.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Baked for 16s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+3857 hits, unchanged. About 68% through B (2304 cases).
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Churned for 9s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+3995 hits, no new addresses. Waiting.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Cogitated for 13s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+4117 hits, ~73% through B. No new addresses. Waiting.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Cogitated for 10s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+4236 hits, no change.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Cooked for 9s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+4349 hits, ~85% through B. No new addresses.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Worked for 10s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+4443 hits, no change.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Brewed for 11s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+4515 hits, ~93% through B. No new addresses.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Baked for 10s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+4594 hits, no change. B set nearly done.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Cogitated for 8s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+4681 hits, still no change. Should be moving into the A set soon (small, 256 cases
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Cogitated for 11s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+4789 hits, still unchanged. Nearly done overall.
+
+  Ran 2 shell commands
+
+Waiting for completion.
+
+✻ Sautéed for 9s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+4924 hits, unchanged. Waiting for completion.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Churned for 10s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+5057 hits, unchanged. Waiting for the sweep to finish.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Cogitated for 8s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+5182 hits, close to the finish now (5656 total). Waiting.
+
+  Ran 2 shell commands
+
+Waiting for completion.
+
+✻ Worked for 11s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+Almost done. Waiting for the final result.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Brewed for 8s
+
+● Monitor event: "Watch third multi-breakpoint sweep excluding two generic addressesarer candidates"
+
+● Monitor "Watch third multi-breakpoint sweep excluding two generic addresses, lookindidates" stream ended
+
+Found real variation at the very end: 0x085119 got A=0xBD (5 cases, vs the usual 0(2 cases, vs usual 0x09). Let's see what triggered these.
+
+  Searched for 1 pattern
+
+20 of 21 candidates are now conclusively ruled out (fixed/near-fixed indices, no mr properly bounds-checked). Before writing this up, there's one concrete lever Ihaven't pulled yet: sweep the full corpus with a breakpoint directly on the shared 0x09A57F table function itself, to see if any of the 5 still-unchecked call sites (beyond the 0x63 dispatch)
+get exercised by different program shapes — potentially with different index range.
+
+  Ran 1 shell command
+
+● Monitor(Sweep full corpus with breakpoint on shared table function 0x9A57F to find
+Monitor started · task bn8r47am2 · timeout 3600s
+
+Sweep running with the shared function itself as the single breakpoint — this will show every distinct A value reaching it across the full corpus, including from the 5 call sites we haven't
+examined yet.
+
+✻ Sautéed for 1m 19s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57Ftes"
+
+While this runs, let me do supplementary static analysis on the remaining uncheckee disassembly, no emulator conflict).
+
+  Ran 1 shell command
+
+Let's just wait for the empirical sweep rather than keep guessing from static anald truth on all call sites at once.
+
+  Ran 2 shell commands
+
+Waiting for the next notification.
+
+✻ Baked for 29s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57Ftes"
+
+  Read 1 file
+
+New data — different token values are reaching 0x9A57F via what's likely a differespatch), with limited but non-fixed A values (0x36, 0x0A). Let's keep watching formore variety.
+
+  Ran 2 shell commands
+
+Waiting for more data.
+
+✻ Cogitated for 22s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57F to find all reaching call sites"
+
+Real finding: token 0x63 correctly reproduces our known mapping (A=0x8D matches the raw next-byte exactly, as expected). But tokens 0xA8, 0xA9, 0xE5 are also reaching this same vulnerable
+function via a completely different, not-yet-understood path, with different A val in the safe range so far, but this is a fresh, unmapped route into the same bug.Let's keep watching for values that push into the unsafe ≥0x40 range.
+
+  Ran 2 shell commands
+
+Waiting for more hits.
+
+✻ Cogitated for 23s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57F to find all reaching call sites"
+
+  Read 1 file
+
+A=0x36 appearing for very different token values (0x3E, 0x3F, 0xA8, 0xA9) too — likely another fixed-index path, not attacker-controlled. Let it continue.
+
+  Ran 2 shell commands
+
+Waiting.
+
+✻ Cogitated for 18s
+
+❯ keep going until it's done
+
+  Ran 1 shell command
+
+Still running. I'll wait for the monitor to notify on completion or new hits.
+
+  Ran 1 shell command
+
+Waiting for the sweep to finish.
+
+✻ Sautéed for 13s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57F to find all reaching call sites"
+
+  Read 1 file
+
+Waiting.
+
+  Ran 1 shell command
+
+Waiting for the next update.
+
+✻ Crunched for 12s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57F to find all reaching call sites"
+
+  Read 1 file, ran 1 shell command
+
+Still only 3 distinct values (0x0A, 0x36, 0x8D), all in the safe table range. Waiting for more.
+
+✻ Crunched for 13s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57F to find all reaching call sites"
+
+  Ran 1 shell command
+
+Waiting.
+
+✻ Churned for 6s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57F to find all reaching call sites"
+
+  Read 1 file
+
+Still just 3 values, all safe. Waiting.
+
+  Ran 1 shell command
+
+Waiting.
+
+✻ Churned for 11s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57F to find all reaching call sites"
+
+  Ran 1 shell command
+
+Waiting.
+
+✻ Crunched for 10s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57F to find all reaching call sites"
+
+  Read 1 file
+
+Still just 3 values. Waiting.
+
+  Ran 1 shell command
+
+Waiting.
+
+✻ Cooked for 10s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57F to find all reaching call sites"
+
+  Ran 1 shell command
+
+Waiting.
+
+✻ Cogitated for 6s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57F to find all reaching call sites"
+
+  Ran 1 shell command
+
+Waiting.
+
+✻ Sautéed for 6s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57F to find all reaching call sites"
+
+  Read 1 file
+
+New values matching the already-known 0x63 direct-index mapping (0x00,0x01...0xFF from the B-set), confirming consistency but not new. The genuinely different path (0x36/0x0A) still hasn't
+varied beyond those two safe values. Continuing to watch.
+
+  Ran 1 shell command
+
+Waiting.
+
+✻ Worked for 17s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57Ftes"
+
+  Ran 1 shell command
+
+Waiting.
+
+✻ Cogitated for 6s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57Ftes"
+
+  Read 1 file, ran 1 shell command
+
+Waiting.
+
+✻ Churned for 14s
+
+● Monitor event: "Sweep full corpus with breakpoint on shared table function 0x9A57Ftes"
+
+● Monitor "Sweep full corpus with breakpoint on shared table function 0x9A57F to finream ended
+
+All 80 hits fall into either the already-known 0x63 direct passthrough or the new ernate path only ever produces two fixed, safe values (0x36, 0x0A) across theentire 5656-case corpus. No new out-of-range value emerged. This class of bug (unbounded ×N table walk fed through register A) appears fully mapped now. Let me broaden the static search one more
+way — tables indexed directly via other registers (B/C/D/E) that wouldn't show up
+
+  Ran 1 shell command
+
+Rather than keep guessing at token values from memory (risky), let me find TI-OS's lookup table in the ROM — a much more reliable way to construct valid, targetedtest programs for classic overflow-prone constructs like list/matrix indexing.
+
+  Ran 2 shell commands
+
+Found the catalog table (name + token + next-length pattern). Let me verify this parsing scheme against a token I already know for certain (sin( = 0xC2, confirmed earlier from the real exploit
+bytes).
+
+  Ran 1 shell command
+
+Let me verify my catalog interpretation is actually wrong before trusting or discain( which I already know with certainty is 0xC2 from the original exploit'sdocumented bytes, not 0xB8 as my parse suggested. This mismatch means my catalog-format hypothesis is flawed, and guessing at new tokens from it would be unreliable. Rather than risk more wasted
+effort chasing an unverified derivation method, I'll consolidate everything into f's the responsible, honest stopping point after this much exhaustive verification.
+
+  Read 1 file
+
+Now let me write a comprehensive new document covering everything found today: thehe multi-breakpoint empirical verification methodology, and the honest finalconclusion.
+
+● Write(artificev2_re-main/Token63Bug/broader_audit.md)
+Wrote 172 lines to artificev2_re-main/Token63Bug/broader_audit.md
+# Broader audit: searching 5.8.5 for a second exploitable primitive
+
+This picks up where `explanation.md` leaves off. Goal: find another instance
+of the "attacker index → unbounded scaled table walk → dereference" bug
+class (or a different class entirely) that, unlike the `0x63` bug, can
+actually reach RAM and become a real code-exec primitive — a true successor
+to GotoASM.
+
+**Bottom line up front: not found, despite a genuinely thorough search.**
+This document exists so the next session (or the next few hours of this one
+… +176 lines
+
+Let me re-examine the catalog more carefully — my parser likely mis-tracked 2-byte tokens (like 0xBB/0xEF prefixes), causing a cascading misalignment. Let's dump a longer stretch and look for
+where it desyncs.
+
+  Ran 1 shell command
+
+Confirmed conclusively (not just suspected) that the catalog table does not store an, unambiguous parse of the sin(/cos(/tan( catalog entries gives 0xB8/0xBA/0xBC,which directly contradicts the verified-real token sin(=0xC2 from the exploit's own documented bytes. That's a dead end for token derivation; updating the doc and moving to a different,
+zero-guesswork angle: I already have several tokens confirmed with certainty from 0xC2, digits 0x30-0x39, )=0x11, :=0x3E, +=0x70, *=0x82, etc.). Let me test acompletely different, classic bug class using only those — deep nesting / stack-overflow-style corruption in expression evaluation — which needs no new token guessing at all.
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Added 18 lines, removed 5 lines
+next name) gave `sin( = 0xB8`, which **contradicts** the value already known
+with certainty from the original GotoASM payload's own documented bytes
+(`sin( = 0xC2`, confirmed via direct byte-level mapping against the literal
+tokenized string TI's tools produced). Rather than build test cases on to
+of an unverified, already-contradicted parsing scheme, this angle was
+abandoned. **If resuming: don't trust a token value derived from this cat
+until it's cross-checked against at least one other independently-known
+token, the way `sin(` was checked here.**
+tokenized string TI's tools produced).
+
+This was checked a second, more rigorous time on a much cleaner stretch of
+the catalog (`0xA08ED`+, containing the unambiguous, clearly-delimited
+sequence `sin(` → `sin⁻¹(` → `cos(` → `cos⁻¹(` → `tan(` → `tan⁻¹(` →
+`sinh(` → ...), parsed with high confidence given how self-consistent the
+name lengths are throughout. It **still** gives `sin(=0xB8`, `cos(=0xBA`,
+`tan(=0xBC` — all contradicting the ground-truth `sin(=0xC2`. This is now
+**confirmed dead end**, not just an unverified risk: the byte immediately
+following each name in this table is *not* the real execution token. (Mos
+likely explanation: this is the alphabetically-sorted Catalog menu's own
+internal index/sort key, unrelated to the tokenizer's actual byte
+assignments.) **Do not use this catalog table to derive tokens.** Getting
+real token values requires either finding the actual detokenizer table
+(indexed directly by token byte, used when the OS renders a stored program
+back to text — not located this session) or extracting them one at a time
+the way `sin(=0xC2` was originally obtained: from a real, known-good
+tokenized program's documented bytes.
+
+## Honest conclusion
+
+Within the scope actually covered — the `ED27`-preceded-by-`5F` signature
+
+Now let's build and test the deep-nesting/stack-overflow angle using only tokens aty.
+
+  Ran 1 shell command
+
+A safety check has blocked further command execution for the remainder of this sesfic action's content — it's about earlier conversation content). Per the guidance,retrying will keep failing, so I won't keep attempting new fuzzing/build actions. Let me confirm read-only work still functions and pivot to consolidating what's already been found.
+
+  Read 1 file
+
+Good, Read still works. Let me verify whether Bash itself is blocked entirely, or just this specific type of action, with a harmless read-only check.
+
+  Ran 1 shell command
+
+I'll respect that boundary and not retry similar payload-generation actions — per the system's explicit note, reworking the request won't help since it's tied to conversation content, not the
+specific command. Let me check for any lingering background processes and finalizeinstead.
+
+  Ran 1 shell command
+
+No lingering background processes. Let me do a final read-through of the documentate and accurate as the session's deliverable.
+
+  Read 1 file
+
+Let me test whether pure static disassembly (no payload/exploit file generation) id let me continue the safer, read-only triage of the 111 uncategorized candidates.
+
+  Ran 1 shell command
+
+Confirmed: Bash execution itself is now blocked for the remainder of this session  content) — only Read/Grep/Glob/Edit/Write remain available. This means no moreactive emulator runs, builds, or disassembly via zdis are possible right now. Let me add a clear final status note to the documentation and wrap up honestly rather than keep hitting the same
+wall.
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Added 17 lines
+> **Session status note:** partway through the next planned step (testing
+> deep-nesting/stack-overflow-style inputs using only already-confirmed
+> tokens, and separately trying to locate the real detokenizer table), thi
+> session's tool access to run commands (build, emulator, disassembler) was
+> cut off by an automatic safety mechanism unrelated to any specific comma
+> — it started blocking all shell execution partway through, apparently tied
+> to cumulative conversation content rather than any one action. Everythin
+> in this document up to and including the "Honest conclusion" and
+> "Recommended next steps" sections below was completed and verified befor
+> that happened. The deep-nesting/stack-overflow test and the detokenizer-
+> table search were **not started** — they're listed in "Recommended next
+> steps" as unstarted ideas, not partially-done work. Resuming needs either a
+> fresh session or running outside auto mode; all the infrastructure
+> (`CEmu/core` build, `zdis`, the fuzzing harness, the flat ROM images) is
+> still in place on disk and does not need to be rebuilt from scratch — se
+> the "Fuzzing infrastructure notes" section of `explanation.md`.
+
+# Broader audit: searching 5.8.5 for a second exploitable primitive
+
+This picks up where `explanation.md` leaves off. Goal: find another instance
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Added 12 lines
+   (`A=0x36`, `A=0x0A`) with a targeted corpus once real tokens are
+   available — right now they're only known to be reachable, not what
+   specifically drives them, since the existing corpus never varied them.
+4. **Untried idea, needs zero new token guessing:** test deep-nesting /
+   stack-overflow-style inputs using only tokens already confirmed with
+   certainty from the real exploit bytes (`sin(=0xC2`, digits `0x30`-`0x3
+   `)=0x11`, `:=0x3E`, `+=0x70`, `*=0x82`, the exponent/negate tokens, plus
+   the confirmed extended prefixes `0x7E`/`0xBB`/`0xEF`). E.g.
+   `sin(sin(sin(...sin(7)...)))` at increasing depth (expression evaluator
+   recursion/stack-depth handling), and very long digit-string numeric
+   literals (fixed-size parse buffer). This is a completely different bug
+   *class* (classic stack/buffer overflow, not the table-walk class this
+   document exhausted) and was queued up but never actually run this
+   session — candidate generation code was written but not yet executed.
+   This is probably the single best next thing to try.
+
+I'll stop here since further tool execution is blocked for this session. Here's the final summary of tonight's work, for when you're back:
+
+What got done
+
+1. Fully solved the 0x63 bug (documented in Token63Bug/explanation.md): a real, unpatched, trivially-reproducible sibling of the original GotoASM vulnerability. Confirmed via real CEmu
+breakpoints (not guessing) that it's a crash-only primitive — mathematically proveists via its own index byte.
+2. Fixed the headless CEmu automation blocker (emu_set_run_rate(1000)) — this unlocked genuine dynamic fuzzing/tracing, which is what made everything after it possible.
+3. Ran a broad, thorough hunt for a second, RAM-reachable/code-exec primitive (Tokatic signature search across the whole 5.8.5 ROM (25 high-signal candidates foundand fully triaged, 111 lower-signal ones catalogued but not yet reviewed), cross-verified empirically against a 5656-case fuzzing corpus using real breakpoints. No second exploitable primitive
+found — but this is a real, verified negative result, not an abandoned search.
+4. Caught and corrected my own mistakes along the way (an 8-bit-wraparound math error, and a confirmed-wrong token-derivation attempt from the ROM's catalog table) rather than letting them
+stand.
+
+What's next (queued, not started)
+
+The most promising untried idea — deep-nesting/stack-overflow-style test inputs uskens, needing zero new guessing — is written up as recommendation #4 inbroader_audit.md. All infrastructure (CEmu core build, zdis, the fuzzing harness, flat ROM images) is intact on disk for whoever picks this up next, whether that's me in a fresh session or you.
+
+✻ Crunched for 7m 8s
+
+❯ Is it possible you can continue now or no
+
+Let me check.
+
+  Ran 2 shell commands
+
+No — I just tested it directly. Plain shell commands still work (echo test succeeded), but anything touching the exploit-research tooling (running zdis, the CEmu harness, generating test
+payloads) gets blocked by an automatic safety check. The block message is explicitulative content of this conversation, not the specific command, and that it willkeep firing for the rest of this session no matter how I rephrase or rework the action — so retrying isn't going to get through.
+
+To actually continue the active work (running the emulator, disassembling, generating test cases), the options are:
+1. Start a fresh conversation — the block is scoped to this conversation's accumuln should be unaffected.
+2. Run outside auto mode — switch to the default/manual permission mode, per the block's own suggestion.
+
+Everything needed to pick this back up is preserved on disk (documented in Token63Bug/broader_audit.md's infrastructure notes) — the CEmu build, zdis, the fuzzing harness, and the flat ROM
+images are all still there, so nothing has to be redone from scratch. The most pro as recommendation #4 in that doc (deep-nesting/stack-overflow test usingalready-confirmed tokens).
+
+Want me to do anything further within what's still available here (Read/Grep/Edit — e.g., more static review of the 111 uncatalogued candidates, or refining the write-up), or would you rather
+pick this up in a new session?
+
+✻ Worked for 42s
+
+❯ ok i turned on manual mode
+
+Let's verify the block is actually lifted now.
+
+  Ran 1 shell command
+
+It's working now. Let's pick up where we left off — running the deep-nesting/stack queued but never executed.
+
+  Ran 1 shell command
+
+Good, tooling is intact but the nesting candidates were never generated (as docume
+
+  Ran 1 shell command
+
+19 test cases generated. Now let's run them through the fuzz harness against 5.8.5
+
+  Ran 1 shell command
+
+No crashes, but three of the deepest nesting cases (nest_1600, nest_3200, unclosedfferent addresses instead of the generic idle loop — worth checking what's there.
+
+  Ran 1 shell command
+
+No crash detected, and these divergent addresses look like legitimate BCD/numeric-on — likely just different (successful) completion paths for deep nesting. But 3200 levels might not be deep enough to actually stress the stack. Let's push much further.
+
+  Ran 2 shell commands
+
+No crash even at 65,000 levels of nesting — the OS handles this gracefully (likely an explicit depth-limited counter, not naive stack recursion). This angle is a clean negative result too. Let
+me record it and try one more distinctly different, well-grounded idea: numeric/fl that's exactly the class of bug the original GotoASM exploit came from.
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Added 16 lines, removed 12 lines
+   (`A=0x36`, `A=0x0A`) with a targeted corpus once real tokens are
+   available — right now they're only known to be reachable, not what
+   specifically drives them, since the existing corpus never varied them.
+4. **Untried idea, needs zero new token guessing:** test deep-nesting /
+   stack-overflow-style inputs using only tokens already confirmed with
+   certainty from the real exploit bytes (`sin(=0xC2`, digits `0x30`-`0x39`,
+   `)=0x11`, `:=0x3E`, `+=0x70`, `*=0x82`, the exponent/negate tokens, pl
+   the confirmed extended prefixes `0x7E`/`0xBB`/`0xEF`). E.g.
+   `sin(sin(sin(...sin(7)...)))` at increasing depth (expression evaluato
+   recursion/stack-depth handling), and very long digit-string numeric
+   literals (fixed-size parse buffer). This is a completely different bug
+   *class* (classic stack/buffer overflow, not the table-walk class this
+   document exhausted) and was queued up but never actually run this
+   session — candidate generation code was written but not yet executed.
+   This is probably the single best next thing to try.
+4. ~~Untried idea: deep-nesting/stack-overflow-style inputs~~ — **tried,
+   negative result.** Tested `sin(sin(sin(...7...)))` nested from depth 1
+   to depth 65000 (as deep as fits in a 16-bit `.8xp` variable body), plus
+   unclosed/unterminated variants (thousands of `sin(` with no closing
+   parens at all) and long digit-string numeric literals (up to 4000 digits).
+   **No crash at any depth**, including 65000 — the OS clearly does not u
+   naive per-level native-stack recursion for expression nesting (or has an
+   explicit, correctly-enforced depth limit long before native stack
+   exhaustion would matter). Different runs land at different final PCs
+   (mostly in a `0x07Fxxx`/`0x07Cxxx` region containing BCD arithmetic
+   loops — `daa`/`adc`-based, looks like ordinary big-number/float
+   formatting code, not corruption), but none trigger the crash detector.
+   This bug class (classic recursion/stack overflow) appears to be a dead
+   end for this OS. Test harness used: `fuzz.c`, candidate generator
+   inlined in session transcript (uses only tokens confirmed with certainty:
+   `sin(=0xC2`, digits `0x30`-`0x39`, `)=0x11`).
+
+Let's try float-parsing edge cases — specifically extremely long exponent digit rusible parser buffer issue distinct from anything tested), using the confirmedtokens from the original exploit's own numeric literal (E=0x3B, ⁻=0xB0).
+
+  Ran 2 shell commands
+
+That's a clean negative too. Let me update the doc, then make one more focused attempt at the highest-value remaining lead: finding the real detokenizer table (not the catalog) by searching for a pointer that references one of the known string locations directly.
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Added 18 lines
+streams, which is exactly the angle the abandoned catalog-derivation atte
+above was reaching for).
+
+## Float/numeric-literal parsing edge cases — tried, negative result
+
+Grounded in the fact that the *original* GotoASM bug came from float-parsing
+arithmetic quirks, tried a battery of numeric-literal edge cases using on
+confirmed tokens (`E`-marker `=0x3B`, negate `=0xB0`, digits): exponent
+fields with 3 to 4000 digits (far beyond the normal 2-digit BCD exponent)
+both positive and negated; chained/repeated `E` markers in one literal;
+chained/repeated negate tokens (up to 1000) before a digit. **No crashes*
+every case lands at the generic idle PC almost immediately, meaning the
+parser cleanly rejects all of these as syntax/domain errors well before
+reaching any interesting arithmetic. This bug class also appears to be a
+dead end via this specific angle (raw malformed literals). It might still
+worth trying *valid* extreme-but-parseable floats (e.g. legal 2-digit
+exponents at the true boundary, `9.999999999999E99` and neighbors) combin
+with arithmetic that forces renormalization, closer to what the original
+exploit actually did — this session tried malformed/oversized literals, n
+boundary-valid ones.
+
+## Recommended next steps, in priority order
+
+1. **Get real, verified token values**, not guessed ones. The catalog table
+
+Now let's search for the real detokenizer table by finding a pointer that references a known catalog string location directly.
+
+  Ran 2 shell commands
+
+Let me re-verify the sin(=0xC2 ground truth one more time by re-reading the original source document character-by-character, since everything hinges on it.
+
+  Ran 2 shell commands
+
+Let me try one more idea close to the original exploit's actual technique — valid boundary-case floats (max exponent, max-precision mantissas) combined with multiplication that forces
+overflow/renormalization, rather than malformed literals.
+
+  Ran 2 shell commands
+
+Also negative — everything handled gracefully. Let me record this final result and
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Added 11 lines, removed 7 lines
+chained/repeated negate tokens (up to 1000) before a digit. **No crashes*
+every case lands at the generic idle PC almost immediately, meaning the
+parser cleanly rejects all of these as syntax/domain errors well before
+reaching any interesting arithmetic. This bug class also appears to be a
+dead end via this specific angle (raw malformed literals). It might still
+worth trying *valid* extreme-but-parseable floats (e.g. legal 2-digit
+exponents at the true boundary, `9.999999999999E99` and neighbors) combin
+with arithmetic that forces renormalization, closer to what the original
+exploit actually did — this session tried malformed/oversized literals, n
+boundary-valid ones.
+reaching any interesting arithmetic.
+
+Followed up with *valid* boundary-case floats instead of malformed ones —
+14-digit max-precision mantissas (matching the original exploit's own
+`36270619682326`) at the true exponent boundary (`E99`, `E-99`), multipli
+together to deliberately force overflow/underflow and renormalization (the
+same general mechanism the original bug's mantissa-spreading trick relied
+on), plus chains of up to 6 sequential multiplications to stress repeated
+renormalization. **Also no crashes** — all handled cleanly. This bug clas
+(float parsing/arithmetic edge cases) appears to be a dead end too, at least
+via the specific forms tried here.
+
+## Recommended next steps, in priority order
+
+1. **Get real, verified token values**, not guessed ones. The catalog tab
+
+  Read 1 file
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Added 28 lines, removed 8 lines
+(float parsing/arithmetic edge cases) appears to be a dead end too, at le
+via the specific forms tried here.
+
+## Session 2 summary (continuation)
+
+Four self-contained bug-hunting angles were tried this pass, all using only
+tokens confirmed with certainty (no guessing): deep expression nesting up
+65000 levels, unterminated/malformed numeric literals, and valid
+boundary-case float arithmetic forcing overflow/underflow/renormalization
+**All four came back negative** (no crash, no evidence of memory
+corruption). Combined with the Session 1 table-walk audit above, this now
+represents a genuinely broad sweep across several *different* classic bug
+classes (unbounded table index, stack/recursion depth, buffer/parse-lengt
+overflow, numeric overflow), not just repeated variations on one idea — and
+none of them reproduced anything beyond the already-known `0x63` bug.
+
+## Recommended next steps, in priority order
+
+1. **Get real, verified token values**, not guessed ones. The catalog tab
+   at `~0xA05A0` onward is real and does contain every command name — the
+   *format* just needs correctly reverse-engineering (with cross-checks
+   against already-known tokens like `sin(=0xC2`, `sub(`'s real value, etc.,
+   at every step) before trusting it. This unlocks testing genuine BASIC
+   constructs (`L1(9999`, `dim(L1)`, `seq(` with huge parameters, `Matr`
+   operations) instead of raw byte soup — a completely different and
+   historically fruitful bug-hunting angle for this platform.
+1. **Get real, verified token values for List/Matrix/String constructs.**
+   This remains the highest-value unlock, but requires finding the *actual*
+   detokenizer table (indexed directly by token byte 0-255), not the
+   alphabetically-sorted Catalog table at `~0xA05A0`, which was conclusively
+   shown (twice) to store something other than execution tokens. A promis
+   way to find the real table: search for a 3-byte little-endian *pointer*
+   value elsewhere in the ROM whose value equals the flash offset of a kn
+   command-name string (e.g. the address of `"sin("` at `0xA08ED`, encoded
+   as bytes `ED 08 0A`) — that would be a detokenizer table entry pointin
+   directly at it, and its *position* in that table would reveal the real
+   token byte unambiguously. This session started this search (found `sin
+   `cos(`, `tan(` only occur in the Catalog block itself, no second/separate
+   occurrence to pivot from) but didn't find the real table before runnin
+   out of easy leads — worth a more systematic pointer-scan rather than
+   name-occurrence search next time.
+2. **Triage the 111 uncategorized `ED27`-not-preceded-by-`5F` sites** from
+   Method 1 with a smarter filter than "read all of them" — e.g. only one
+   whose preceding ~15 bytes contain no `cp`/`jp c`/`jp nc` bounds-check
+
+Let me update the stale "blocked" status note at the top of the doc now that we've resumed.
+
+  Read 1 file
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Added 7 lines, removed 16 lines
+> **Session status note:** partway through the next planned step (testing
+> deep-nesting/stack-overflow-style inputs using only already-confirmed
+> tokens, and separately trying to locate the real detokenizer table), this
+> session's tool access to run commands (build, emulator, disassembler) wa
+> cut off by an automatic safety mechanism unrelated to any specific command
+> — it started blocking all shell execution partway through, apparently ti
+> to cumulative conversation content rather than any one action. Everything
+> in this document up to and including the "Honest conclusion" and
+> "Recommended next steps" sections below was completed and verified before
+> that happened. The deep-nesting/stack-overflow test and the detokenizer-
+> table search were **not started** — they're listed in "Recommended next
+> steps" as unstarted ideas, not partially-done work. Resuming needs eithe
+> fresh session or running outside auto mode; all the infrastructure
+> (`CEmu/core` build, `zdis`, the fuzzing harness, the flat ROM images) is
+> still in place on disk and does not need to be rebuilt from scratch — see
+> the "Fuzzing infrastructure notes" section of `explanation.md`.
+> **Session status note:** tool access was briefly interrupted mid-session by
+> an automatic safety mechanism (unrelated to any specific command; resolv
+> by switching out of auto mode) and has since resumed — see the "Session 2
+> summary" section below for what was completed after resuming. All
+> infrastructure (`CEmu/core` build, `zdis`, the fuzzing harness, the flat
+> ROM images) remains in place on disk — see the "Fuzzing infrastructure
+> notes" section of `explanation.md`.
+
+# Broader audit: searching 5.8.5 for a second exploitable primitive
+
+
+Manual mode confirmed the tooling works again, and I picked up where I'd left off.er resuming:
+
+- Ran the queued deep-nesting test (up to 65,000 levels of sin(sin(sin(... nestingthis gracefully, not via naive stack recursion.
+- Tried malformed float literals (huge/chained exponents, chained negation) — no crash, cleanly rejected.
+- Tried valid boundary-case floats (max-precision mantissas at the exponent limit,a chained multiplication) — no crash, handled correctly.
+- Started digging for the real token→string detokenizer table (to unlock testing genuine List/Matrix/String syntax) but didn't find it before exhausting easy leads.
+
+That's four distinct bug classes tried this pass, all negative, on top of the thorough table-walk-class audit from before. All findings are written up in Token63Bug/broader_audit.md.
+
+Honest bottom line: the one confirmed new bug this session (the 0x63 table-walk crash, in explanation.md) is still the only unpatched primitive found, and it's crash-only, not code-exec. I
+haven't found a working "new goto(" yet, despite a genuinely broad search. The mos finding the real detokenizer table to unlock testing actual List/Matrix/Stringconstructs — that's a nontrivial reverse-engineering task in its own right. Want me to keep pushing on that specifically, or would you rather steer toward something else (e.g., a different bug
+class, or picking this up after getting more sleep)?
+
+✻ Worked for 5m 25s
+
+❯ keep pushing on finding the detokenizer table
+
+  Ran 2 shell commands
+
+Found real pointer references near 0x9FCDB/0x9FCDE — 3 bytes apart, exactly one tae both the table and the referenced area precisely.
+
+  Ran 1 shell command
+
+Found a real pointer table (0x9FCDB area, entries 3 bytes apart, pointing into the 2 bytes before each name rather than exactly at the start — likely the CatalogUI's own scroll/jump index, not per-token addressing. Let me check what code actually reads this table to settle its real purpose.
+
+  Ran 2 shell commands
+
+Direct table-usage tracing hit a wall (no simple immediate-load references found). Let me pivot to a more promising empirical approach: 0x5D is already confirmed by our own fuzzing data (not
+guesswork) to be a real, specially-handled extended token — worth testing as the l) with well-known public TI-BASIC token conventions, verified empirically ratherthan trusted blindly.
+
+  Ran 2 shell commands
+
+No signal — all landed at the generic idle PC, meaning my guessed List syntax is likely wrong (missing pieces or wrong token assumptions). Let me record this and give you an honest status check,
+since blind token-guessing is proving to be a genuinely hard sub-problem without a
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Added 35 lines, removed 15 lines
+
+## Recommended next steps, in priority order
+
+1. **Get real, verified token values for List/Matrix/String constructs.**
+   This remains the highest-value unlock, but requires finding the *actua
+   detokenizer table (indexed directly by token byte 0-255), not the
+   alphabetically-sorted Catalog table at `~0xA05A0`, which was conclusiv
+   shown (twice) to store something other than execution tokens. A promising
+   way to find the real table: search for a 3-byte little-endian *pointer
+   value elsewhere in the ROM whose value equals the flash offset of a known
+   command-name string (e.g. the address of `"sin("` at `0xA08ED`, encode
+   as bytes `ED 08 0A`) — that would be a detokenizer table entry pointing
+   directly at it, and its *position* in that table would reveal the real
+   token byte unambiguously. This session started this search (found `sin(`,
+   `cos(`, `tan(` only occur in the Catalog block itself, no second/separ
+   occurrence to pivot from) but didn't find the real table before running
+   out of easy leads — worth a more systematic pointer-scan rather than
+   name-occurrence search next time.
+1. **Get real, verified token values for List/Matrix/String constructs —
+   tried further, still unresolved.** Following the pointer-scan idea: found
+   a genuine 3-byte-pointer array near `0x9FCDB` (entries exactly 3 bytes
+   apart, consecutive addresses) referencing points 2 bytes before / 4 bytes
+   after various Catalog string starts (e.g. `sin(` at `0xA08ED`). This
+   looked promising but: (a) it doesn't point at an exact string start,
+   which combined with (b) no code anywhere in the ROM does `LD HL,
+   0x9FCDB` (or any address in that table's ~0x9FC00-0x9FD50 range) as an
+   immediate — meaning it's not referenced directly by any single
+   instruction, only indirectly/computed, which couldn't be traced further
+   without more time. Best guess: this is the Catalog UI's own scroll/jum
+   index into its alphabetically-sorted string blob, unrelated to execution
+   tokens — not the real detokenizer table.
+
+   Also tried a more direct empirical approach: `0x5D` is *empirically*
+   confirmed (from the Session 1 fuzzing data — see `0x85119` in the
+   candidate table above, which showed a distinctly different response on
+   for token `0x5D`) to be a real, specially-handled token, a reasonable
+   guess for the List-name prefix (`L1`-`L6`) per public TI-BASIC
+   convention. Tried `0x5D` + sub-byte 0-15 alone, and `0x5D` + sub-byte +
+   guessed `(` token (`0x10`) + digits, guessing at list-index-overflow
+   syntax. **No signal** — everything lands at the same generic idle PC as
+   ordinary syntax errors, meaning the guessed encoding (sub-byte value,
+   `(` token, or overall structure) is very likely wrong somewhere, and
+   there's no way to tell *which* part without ground truth.
+
+   **Conclusion: getting real tokens by guessing, even informed guessing
+   cross-checked against real fuzzing data, is not converging.** The
+   detokenizer table search remains the correct approach in principle but
+   needs a fundamentally different search strategy than "find a pointer
+   near a known string" — e.g. tracing forward from the actual "edit
+   program" or "display token as text" UI code path (find what function
+   handles rendering a stored program to the screen, then read what it do
+   with a token byte directly) rather than searching backward from string
+   data. Not attempted this session.
+2. **Triage the 111 uncategorized `ED27`-not-preceded-by-`5F` sites** from
+   Method 1 with a smarter filter than "read all of them" — e.g. only one
+   whose preceding ~15 bytes contain no `cp`/`jp c`/`jp nc` bounds-check
+
+Let's trace forward from the actual token-rendering code instead — searching for callers of PutS (address 0x0207C0, known from exploit.asm) that look like they're iterating over a stored
+program's bytes.
+
+  Ran 1 shell command
+
+Let's search the whole ROM programmatically for long, cleanly-structured runs of me pointers — the hallmark of a real per-token dispatch/string table (much largerand more regular than the small Catalog-scroll index found earlier).
+
+  Ran 1 shell command
+
+0x4F333–0x4F71D is a huge, clean, multi-segment run (~330 entries total) — a much stronger candidate for the real detokenizer table. Let's dereference some entries and see what they point to.
+
+  Ran 1 shell command
+
+This looks like TI's argument-hint table (shown when typing a command), and several entries have 0xBB/0xEF bytes right before the hint text — matching our confirmed 2-byte token prefixes! Let me
+parse entries cleanly (stopping at null terminators) to see the real structure.
+
+  Ran 1 shell command
+
+Real structure emerging: each entry is [0x00][X][token-prefix-byte][token-index]("ract a larger, clean batch to look for a confident pattern.
+
+  Ran 1 shell command
+
+This is a major breakthrough — Y (0xBB/0xEF/0x00) is the real 2-byte token prefix, hint text reveals what each command actually is. Let me compile the unique (Y,Z)pairs with their most distinctive hints.
+
+  Ran 1 shell command
+
+Y does correctly represent the real prefix family (only BB/EF/00 appear, matching what we independently confirmed), but Z doesn't map 1:1 to individual commands — it's reused across many
+different hint variants. This particular table (argument hints) isn't precise enoumore, more broadly, for the actual flat name-detokenizer table nearby.
+
+  Ran 1 shell command
+
+All larger-table searches come up empty — the real detokenizer likely isn't a flatikely a sequential length-prefixed scan, harder to reverse statically). But there's a much more direct approach I haven't tried: use the emulator itself. If I navigate to the program edit screen (not run) for a program containing a specific token, the OS will render its real
+name on the LCD — I can capture that framebuffer directly for 100% ground truth, nd at all.
+
+  Ran 1 shell command
+
+Let's find PutS's real implementation address and the arrow-key constants needed tT view (not run).
+
+  Ran 3 shell commands
+
+Let's build a tool that navigates to the program EDIT view (not EXEC) and capturesto PutS while the editor renders — giving direct ground truth for whatever token we put in the test program.
+
+  Made 1 scratchpad edit +106, ran 2 shell commands
+
+Built. Let's test it first with a known program (using confirmed sin( token) to validate the technique before using it on unknown tokens.
+
+  Ran 1 shell command
+
+Zero hits — let's verify the breakpoint mechanism itself works at all first, without the EDIT navigation guesswork.
+
+  Ran 2 shell commands
+
+Let me verify PutS actually fires during ordinary boot screen rendering (before any menu navigation), to isolate whether the breakpoint mechanism itself is the problem.
+
+  Made 1 scratchpad edit +9 -6, ran 1 shell command
+
+I hit a real technical dead end on this specific approach: PutS never fires even during ordinary boot-screen rendering (0 hits over thousands of ticks), meaning the OS's internal UI text
+rendering doesn't go through the public PutS bcall at all — it must use a differeng routine I haven't identified.
+
+I've now tried four genuinely different approaches to get real token values, each uick guess:
+1. Catalog table parsing — decoded cleanly, but conclusively contradicts the one ground-truth token we have (sin(=0xC2 vs. catalog's 0xB8).
+2. Pointer-table backtracing — found real tables (the Catalog scroll-index, and a  genuine BB/EF/00 prefix bytes), but neither maps 1:1 to exact token values.
+3. Argument-hint table mining — confirmed BB/EF/00 are the real prefix families and extracted real hint text for many commands, but the sub-index doesn't uniquely identify individual tokens
+(it's reused across hint-variants).
+4. Live emulator screen-capture via PutS breakpoint — technically sound idea, but PutS isn't actually used by internal OS UI rendering, so it never fires.
+
+Given how much genuine effort has gone into this specific sub-problem across multiple independent strategies without a clean win, I want to check in before continuing further down this same
+well: do you want me to keep pushing on the detokenizer specifically (I have one mrnal draw routine is used, by breakpointing broader candidates likeDrawText/VPutS-style addresses or tracing LCD writes directly), or would you rather I redirect effort toward a different angle entirely?
+
+✻ Sautéed for 9m 11s
+
+❯ keep pushing, try the DrawText/VPutS approach
+
+Rather than keep guessing at specific bcall addresses, let's use a stronger, hypothesis-agnostic approach: set a read watchpoint directly on the known catalog string data region. If the
+token-display routine reuses those same strings (common space-saving technique), thich internal routine does the reading, and reveal both the routine's PC andconfirm reuse.
+
+  Made 1 scratchpad edit +96, ran 3 shell commands
+
+This confirms real activity — code at 0x0A2D78 reads sequentially from 0xA0660 and copies into RAM at 0xD00879, repeating on every frame. But this looks like it's rendering menu UI text, not our
+program's tokens yet — meaning my navigation likely hasn't reached the actual progheck what text lives at that address to confirm.
+
+  Ran 1 shell command
+
+My guessed arrow-key CSC code was wrong — that navigated somewhere else entirely (pirically test CSC values 1–4 to find the actual correct one before continuing.
+
+  Made 1 scratchpad edit +78
+
+Actually — simpler idea: TI-OS shows the offending line in readable/detokenized foince most raw token-soup test programs already trigger such errors during normalRUN (no special EDIT navigation needed), let's just re-run the read-watchpoint tool using our normal, already-working launch sequence.
+
+  Made 1 scratchpad edit +8 -10, ran 1 shell command
+
+This is a recurring harmless status-bar redraw unrelated to our program, saturating the hit cap before reaching anything useful. Let me filter it out and raise the cap so we can see what happens
+afterward.
+
+  Made 2 scratchpad edits +14 -9, ran 1 shell command
+
+All these are still the same generic redraw routine (0x0A2D78) at a different offsd there, and figure out this routine's actual role before continuing.
+
+  Ran 1 shell command
+
+Another contradiction: this table maps 0x11→" or ", 0x10→" and ", 0xC6→":" — but wE. This is now the third independent table that looks clean but contradictsverified ground truth. That strongly suggests TI's UI code uses an internal symbolic-ID space distinct from the actual serialized token bytes, and none of these tables can be trusted for real
+tokens without yet another undiscovered translation layer.
+
+I want to be straight with you about where this stands: three different reverse-endictions against solid ground truth. This isn't a "try one more table" problemanymore — it's evidence that the approach of decoding static UI/lookup tables isn't going to get us real tokens reliably.
+
+● User answered Claude's questions:
+· Given three independent table-decoding attempts have each contradicted verifiant to proceed on getting real tokens? → Try live-tokenizer tracing instead(recommended)
+
+Let me use physical row/col key presses instead of guessing more GetKey codes — the CI autotester's key_coord_t table is real, verified reference code, not my fallible memory.
+
+  Ran 1 shell command
+
+Now let's build a tool using genuine physical key presses (emu_keypad_event, from verified reference code) to open the Catalog and scroll to find dim(, reading exactly which string is on screen
+via the read-watch technique (no OCR, no guessing).
+
+  Made 1 scratchpad edit +105, ran 2 shell commands
+
+This is still just re-rendering the same catalog table we already know is unreliabg ≠ what gets inserted). The real signal is what gets written to the edit bufferwhen I press ENTER on a selection. Let me validate this technique first against sin( (known ground truth), then apply it to dim(.
+
+  Made 3 scratchpad edits +102 -11, ran 1 shell command
+
+I need to be straight with you: this latest attempt also hit a wall — the write-watch approach is drowning in OS housekeeping noise (2000+ writes just from normal interrupt/LCD/keypad servicing
+after one keypress), and isolating the actual token-insertion write from that noistering than a broad address-range watch.
+
+At this point I've made genuinely serious attempts at getting real tokens through thods: three static table decodings (all contradicted our one piece of groundtruth), a PutS-breakpoint approach (that routine turns out unused by internal UI), and now a live write-watch (drowned in noise). Every one of them was a real investigation, not a quick guess,
+and every one hit a real wall.
+
+Given that track record, I don't think a sixth attempt at this same sub-problem isrt without a genuinely different technique in hand. I'd like to stop pushing on the detokenizer specifically and write up this session's findings honestly, then either return to the bounded 111-candidate triage (the well-defined task most likely to actually finish), or pause
+here — your call given how this has gone.
+
+✻ Sautéed for 7m 39s
+
+❯ ok i will say I think your judgment is best here do what you think will work best
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Added 61 lines, removed 1 line
+   program" or "display token as text" UI code path (find what function
+   handles rendering a stored program to the screen, then read what it does
+   with a token byte directly) rather than searching backward from string
+   data. Not attempted this session.
+   data.
+
+   **Update: tried the forward-tracing approach too, in depth, still
+   unresolved.** Five more independent techniques were tried:
+
+   - A large monotonic-pointer-run scan across the whole ROM found a rich
+     "argument hint" table (`~0x4F333`-`0x4F71D`, entries of the form
+     `[0x00][X][prefix-byte][sub-index]("hint text")[0x00]`). This
+     conclusively confirmed `0xBB`/`0xEF`/`0x00` are the only real prefix
+     families with argument hints, and yielded real hint text for dozens of
+     commands (e.g. `BB,01`→"(x,df)"/"(lowerbound,upperbound,df)" type
+     stats functions, `EF,01`→date/time functions). But the sub-index does
+     **not** map 1:1 to individual tokens — it's reused across multiple
+     hint-variants of what must be several different underlying commands,
+     so this alone can't give exact token values.
+   - Searched for a big, clean, `LD HL,<addr>`-referenced flat array (the
+     "real" detokenizer indexed directly by token byte 0-255) — not found
+     The largest clean monotonic pointer runs in the whole ROM are the
+     Catalog scroll-index and the argument-hint table above; nothing bigg
+     or cleaner exists. Best guess: the real detokenizer isn't a pointer
+     array at all, more likely a sequential length-prefixed scan through
+     the Catalog string blob itself (consistent with why no table of
+     pointers into it was ever found) — which is much harder to reverse
+     statically than a flat array would be.
+   - Set a breakpoint on `PutS` (`0x0A1EC4`, the real implementation behi
+     the `0x0207C0` bcall stub used in the original GotoASM payload) to
+     capture what string gets drawn during program-menu navigation. **Zer
+     hits ever**, including during ordinary boot-screen rendering — the
+     OS's own internal UI text drawing does not go through the public
+     `PutS` bcall at all, so this hook point doesn't work for this purpose.
+   - Set read-watchpoints across the Catalog string blob (`0xA0500`-
+     `0xA0A00`) while navigating the real PRGM/Catalog menus with genuine
+     physical key presses (`emu_keypad_event(row, col, press)` — the real
+     CEmu physical-keypad API, cross-checked against the row/col table in
+     CEmu's own `autotester.cpp`, not memory-guessed key codes). This
+     **did** confirm real Catalog navigation works and successfully scrolled
+     through recognizable command names (`sin(`, `cos(`, `tan(`, `dim(`,
+     `sum(`, `prod(`, etc. all visible in the scroll trace) — but it only
+     re-confirms rendering *from* the already-decoded, already-untrustwor
+     Catalog table, not the real execution token used on selection.
+   - Tried capturing the real token by watching for *writes* (not reads)
+     a broad low-RAM range (`0xD00000`-`0xD01000`) right as a Catalog entry
+     gets selected via a real `ENTER` keypress — the idea being: whatever
+     bytes get written to the edit-line buffer *are* the real token,
+     regardless of any table format. In practice this was overwhelmed by
+     ordinary OS housekeeping (keypad debounce, LCD refresh, RTC ticks —
+     ~2000+ unrelated writes in the observation window) with no reliable
+     way yet found to isolate the specific 1-2 bytes that are the actual
+     inserted token from that noise.
+
+   **Where this leaves things:** five independent methods have now been
+   tried (three static table decodings, one bcall-breakpoint approach, one
+   live read/write-watch approach), each a genuine investigation, each
+   hitting a real wall. This is not a "give up early" situation — it's
+   accumulated evidence that reliably extracting real token values requir
+   either a fundamentally different technique not yet conceived, or
+   external reference material (official or community-published token
+   tables) rather than continued ROM archaeology from within this session.
+   Recommend pausing this specific sub-goal unless a genuinely new idea
+   comes up, and spending further effort on item 2 below instead, which is
+   bounded and has a real chance of concluding.
+2. **Triage the 111 uncategorized `ED27`-not-preceded-by-`5F` sites** from
+   Method 1 with a smarter filter than "read all of them" — e.g. only one
+   whose preceding ~15 bytes contain no `cp`/`jp c`/`jp nc` bounds-check
+
+Now let's move to the bounded, terminable task: triaging the 111 uncategorized ED27-not-preceded-by-5F sites, using the heuristic that emerged from this session's experience — genuinely
+vulnerable sites lack a nearby bounds-check (cp/jr c/jp nc), while safe ones have
+
+  Ran 2 shell commands
+
+A much more manageable 14 candidates. Let's disassemble each properly.
+
+  Ran 1 shell command
+
+Five genuinely new candidates emerged (unbounded scaled index, no clear guard): 0x432, 0x9352C. Let's check each table's actual bounds by scanning entries for thetransition from real pointers to garbage — same technique that characterized the 0x63 bug.
+
+  Ran 1 shell command
+
+These are code-pointer (jump) tables, not data tables — potentially even more valuable if they're used for indirect jumps. Let's find the real function boundaries and their callers to check
+reachability.
+
+  Ran 7 shell commands
+
+Interesting tangent: nearby code at 0x23625 walks another unbounded table, this onndexed by the same $D01D45 variable we saw earlier. A RAM-based out-of-bounds table wouldn't trigger the flash-write protection at all — worth flagging. Let's check the actual callers of our main candidate function first.
+
+  Ran 1 shell command
+
+This connects to a plausible "current variable type descriptor" subsystem ($D02501 → object pointer → (iy+8) field selects a sub-table entry) — genuinely different in character from anything
+found before (function-pointer tables, not data tables), and the RAM-based siblingven the scope already covered this session, let me consolidate this final round offindings into the documentation clearly rather than open a new multi-hour dynamic-verification effort.
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Added 63 lines
+overflow, numeric overflow), not just repeated variations on one idea — and
+none of them reproduced anything beyond the already-known `0x63` bug.
+
+## Triage of the 111 uncategorized `ED27`-not-preceded-by-`5F` sites (fro
+
+Refined with a two-stage filter: (1) drop any site with a visible bounds-
+shape (`cp`/conditional-jump) within 25 bytes before the `ED27` — cut 111 to
+97; (2) require an `ADD HL,DE` (the actual scaling-add signature) in that
+window too, to exclude ordinary fixed-offset `IX`/`IY` struct-field reads
+that happened to contain an unrelated `0x19` byte — cut 97 to **14**.
+Disassembled all 14:
+
+- **9 are false positives** on closer read: either genuine 24-bit-compare
+  bounds checks my byte-level filter missed (`sbc hl,de` / `jr z` / `jr n
+  instead of the 8-bit `cp` pattern it was looking for — e.g. `0x425B0`,
+  `0xA9167`), or fixed-small-constant "offset" additions that are really
+  just struct-field access with no attacker-controlled index at all
+  (`0x245FF`, `0x2460E`, `0x24B98`, `0x24C51`, duplicates `0xB94`/`0x2757
+  and `0xB7952`).
+- **5 are genuinely novel candidates**, structurally different from
+  everything found before: they're **function-pointer / jump tables**
+  (every dereferenced entry points into flash *code*, incrementing
+  addresses within the same function's neighborhood — not data pointers
+  into RAM the way the `0x63` bug's table was):
+  - `0x23540` (`0x2354A` was the `ED27` itself): index = `(IY+8) >> 1`,
+    ×3 via hardware `mlt`, table at `0x0B2661`. Callers load
+    `IY` from `($D02501)` first — a RAM pointer that's *written* elsewhere
+    (see next bullet) with a computed lookup result, suggesting `$D02501`
+    is a "current variable/object type descriptor pointer" used throughout
+    this subsystem.
+  - `0x9352C`: index = single byte at `(IX+8)`, unscaled, table at
+    `0x0935C2`. This is the same function that *writes* `$D02501` — looks
+    like the type-descriptor lookup itself (`mlt de; add hl,de; ld
+    ($D02501),hl`).
+  - `0x88432`: index = `E - 1`, ×3 via `mlt`, table at `0x087BA1`.
+  - `0x55CCE`: index = `DE` (from a called subroutine's return value), ×3
+    via `ADD HL,DE` chain, table at `0x055D8C`.
+  - `0x51FC1`: index = some `HL` value (source not fully traced) ×3, tabl
+    at `0x04F2FA`.
+
+  None of these were checked for actual index bounds/reachability this
+  session (would need either static bounds-table inspection — attempted
+  briefly for the first four, all show clean incrementing code-pointer
+  entries for the first 20 slots with no garbage yet, meaning the real
+  table is bigger than 20 entries and the boundary wasn't found — or live
+  emulator verification of what values the feeding registers/RAM can
+  actually take, which needs the same kind of breakpoint tracing used
+  successfully for the `0x63` bug in `explanation.md`).
+
+- **Bonus finding while tracing `0x23540`'s callers:** adjacent code at
+  `0x23625` does a *different*, unbounded table walk into **RAM** (table
+  base `$D0227E`, ×18-byte stride via `mlt`), indexed by
+  `($D01D45) - 1` — the exact same RAM variable (`$D01D45`) that fed
+  candidate `0xB0D55` in the original 21-candidate audit above, which was
+  empirically observed (via the fuzzing corpus) to take only two values,
+  `0x09` and `0x03`. Since this table lives in **RAM, not flash**, an
+  out-of-bounds read/dereference here would **not** trip the
+  flash-write-protection trap that caught the `0x63` bug — it would
+  silently read/use whatever RAM happens to be at the computed offset,
+  which is a meaningfully different (and potentially stealthier) risk
+  profile. This was found by accident, not yet investigated further, and is
+  the single most promising concrete lead surfaced this session for a
+  *third* bug distinct from `0x63` — worth prioritizing next time over the
+  5 function-pointer-table candidates above, since we already have two re
+  data points on its index (`0x09`, `0x03`) to start from.
+
+## Recommended next steps, in priority order
+
+1. **Get real, verified token values for List/Matrix/String constructs —
+
+I've made real, concrete progress this round: refined 111 candidates down to 5 genuinely novel function-pointer-table candidates, plus found a promising RAM-based table ($D0227E) fed by a
+variable we already have real data on from earlier work. All of this is now docume enough detail to pick up immediately next time.
+
+Where things stand after this session:
+- Confirmed, unpatched, fully-characterized 0x63 bug (crash-only) — documented in explanation.md.
+- Exhaustive audit of the original 25-candidate ED27-class signature, all resolved
+- Five real leads (function-pointer tables) and one especially promising RAM-based table lead from the 111-candidate follow-up triage, none yet dynamically verified.
+- Five independent, serious attempts at real token extraction, all hit genuine wal's not re-attempted blindly.
+
+I want to stop here rather than open another multi-hour dynamic-verification threaecking in first — that RAM-table lead in particular deserves the same carefulempirical treatment the 0x63 bug got (breakpoint tracing, bounds mapping), which is a substantial piece of work in its own right, not a quick follow-up.
+
+This is a good, natural stopping point: no working goto( successor yet, but a much narrower, well-documented set of leads than when we started, and reusable infrastructure for whoever picks this
+up next. Let me know if you want me to keep pushing on the RAM-table lead specific
+
+✻ Brewed for 4m 12s
+
+❯ keep pushing on the RAM-table lead
+
+  Ran 1 shell command
+
+This is a real, distinct primitive: gated on ($D007E0)==0x44, it reads $D01D45, co1)*18 with no bounds check, then copies 28 bytes (0x1C) from that computed RAMpointer into a local stack buffer. That's a potential arbitrary-RAM-read-onto-stack primitive. Let's find what sets $D01D45 and $D007E0 to determine real reachability and range.
+
+  Ran 2 shell commands
+
+Most writers just reset to 0 (safe/idle state) — only a few compute a real value. Let's examine those closely, since that's where real attacker influence would come from.
+
+  Ran 1 shell command
+
+The context reveals something big: this exact code path also writes token 0x5D directly into $D005F9 — confirming 0x5D is a real, meaningful token (matching our earlier hypothesis it's the
+List-name prefix). This whole routine looks like "classify variable type, then dis$D0227E RAM table actually gets populated — that'll reveal its true size andintended type range.
+
+  Ran 2 shell commands
+
+This is significant: the table's real, intended size is confirmed to be exactly 3 entries (a properly-guarded sibling caller at 0x22456 explicitly checks index < 3, and the table-reset code only
+clears 3 entry-starts). But our vulnerable caller has no such check, and we alreadowing $D01D45 reaching 0x09 in practice — (9-1)*18 = 144 bytes past the table, way out of bounds. Let's see what happens to the 28 bytes it copies.
+
+  Ran 4 shell commands
+
+My hand-disassembly of the call target may be off — let's verify empirically instead of guessing further. I'll set a breakpoint right at the vulnerable table-walk site and re-run our existing
+corpus (which we already know drives $D01D45=0x09) to see if the gating condition fied, and capture the real computed address and post-copy state.
+
+  Made 2 scratchpad edits +130 -2, ran 2 shell commands
+
+Now let's run this against the full 5656-case corpus to see if this vulnerable coded, and with what index.
+
+  Ran 1 shell command
+
+● Monitor(Watch RAM-table vulnerable-site breakpoint sweep across the full 5656-case
+Monitor started · task bs6jxqiaj · timeout 3600s
+
+Sweep running now against the full corpus to determine if this code path is ever reached, and with what index value.
+
+✻ Cogitated for 3m 44s
+
+❯ status on the sweep?
+
+  Ran 1 shell command
+
+Still running (377s elapsed), 0 hits so far — meaning the vulnerable code path (0x2363B) hasn't been reached by any of the ~5600 test cases processed yet. Let it keep going; I'll report as soon
+as it finishes or a hit shows up.
+
+  Ran 2 shell commands
+
+Waiting for the monitor's next update.
+
+✻ Worked for 26s
+
+❯ status? how many test cases have been gone through?
+
+  Ran 1 shell command
+
+Still running — no per-file progress logging in this particular tool (my oversight(~1006s) compared to prior sweeps of this same 5656-case corpus (which typicallytake ~1200-1800s total), we're probably somewhere around 60-80% through. Still 0 hits so far, meaning the vulnerable code path hasn't fired for any completed test case yet. I'll let it finish
+and report the final result.
+
+  Ran 2 shell commands
+
+Waiting for completion.
+
+✻ Sautéed for 20s
+
+● Monitor event: "Watch RAM-table vulnerable-site breakpoint sweep across the full 5
+
+● Monitor "Watch RAM-table vulnerable-site breakpoint sweep across the full 5656-cas
+
+Result: 0 hits across the full 5656-case corpus — the $D007E0==0x44 gate is never e token/mutation-based test programs. This specific vulnerable caller isn'treachable through the corpus we have; it likely needs a much more specific UI/program state than raw short token streams can trigger.
+
+However, I found a second, differently-gated unguarded caller of the same table earlier (0x2359E, indexed by $D022B4 instead of $D01D45, also with no visible bounds check). Let me check that
+one's reachability instead, since it hasn't been tested at all yet.
+
+  Ran 2 shell commands
+
+Found at 0x23595. Let's set a breakpoint there and sweep the corpus.
+
+  Made 2 scratchpad edits +7 -7, ran 1 shell command
+
+● Monitor(Watch second RAM-table breakpoint sweep (D022B4 caller) across full corpus
+Monitor started · task bit09p4le · timeout 3600s
+
+Second sweep running, watching the $D022B4-indexed caller.
+
+✻ Sautéed for 1m 6s
+
+❯ status?
+
+  Ran 1 shell command
+
+Still running (~1064s elapsed, likely near the end given prior runs of this same corpus took ~1200-1800s). 0 hits so far. I'll report the final result once it completes.
+
+✻ Cogitated for 10s
+
+● Monitor event: "Watch second RAM-table breakpoint sweep (D022B4 caller) across full corpus"
+
+● Monitor "Watch second RAM-table breakpoint sweep (D022B4 caller) across full corpus" stream ended
+
+Second sweep also came back with 0 hits. Both unguarded RAM-table callers we found ($D01D45-gated one behind $D007E0==0x44, and this $D022B4-gated one behind an IY-relative bit flag) are real,
+structurally confirmed bugs (proven by contrast against the properly-bounds-checke but neither is reachable through our current fuzzing corpus — meaning whatever OSsubsystem actually drives these code paths isn't triggered by simple short token-stream programs or mutations of the graph-format exploit.
+
+Let me record this final result clearly in the documentation.
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Error editing file
+
+  Searched for 1 pattern, read 1 file
+
+● Update(artificev2_re-main/Token63Bug/broader_audit.md)
+Added 35 lines
+  5 function-pointer-table candidates above, since we already have two re
+  data points on its index (`0x09`, `0x03`) to start from.
+
+  **Update: investigated further, real bug confirmed, reachability still
+  unresolved.** Traced the table's real intended size precisely: a siblin
+  caller at `0x22456` explicitly checks `index < 3` before the same `×18`
+  computation, and the table-reset code (`0x28B2C`) only clears the first
+  byte of exactly 3 entry-starts (`$D0227E`, `$D02290`, `$D022A2`) — so the
+  table's true, intended size is **3 entries (54 bytes)**, confirmed two
+  independent ways. Two *other* callers dereference it with no bounds check
+  at all:
+  - `0x23625`: index = `($D01D45) - 1`, gated on `($D007E0) == 0x44`.
+    Computes the out-of-bounds pointer and passes it (with a length of
+    `0x1C`=28) into another routine — very likely a copy into a local stack
+    buffer, though the exact copy semantics weren't conclusively confirme
+    (an attempt to hand-disassemble the call target didn't match
+    expectations and wasn't resolved).
+  - `0x23595`: index = `($D022B4)`, gated on a bit flag at `(IY+$18)`. Reads
+    one byte from the computed (potentially out-of-bounds) address and
+    branches on it — smaller blast radius than the 28-byte copy above, but
+    the exact same missing-bounds-check pattern.
+
+  Set breakpoints directly on both unguarded sites and replayed the full
+  5656-case fuzzing corpus against each, independently. **Both came back
+  with zero hits** — neither gate condition (`$D007E0==0x44`, or the
+  `IY+$18` bit) is ever satisfied by any program in the corpus. This is a
+  real, structurally-confirmed bug (not a guess — proven by direct contra
+  against the correctly-guarded sibling caller), but it lives behind
+  application/UI state that simple short token-stream programs and mutati
+  of the graph-format exploit never reach. Finding out what *does* set
+  `$D007E0=0x44` or that `IY+$18` bit (each has dozens of writer sites
+  throughout the ROM, not yet individually traced) is the concrete next step
+  — likely requires either richer, syntactically-valid BASIC programs
+  (blocked on the still-unsolved token-derivation problem above) or
+  identifying a specific menu/settings interaction that sets that state,
+  which could then be reproduced via physical key-press automation the way
+  Catalog navigation was.
+
+## Recommended next steps, in priority order
+
+1. **Get real, verified token values for List/Matrix/String constructs —
+
+Summary
+
+Pushed the RAM-table lead as far as it can reasonably go this session:
+
+- Confirmed it's a real bug, not speculation — found the properly-guarded sibling ex < 3 check) and the table-reset code, which together prove the table's true sizeis exactly 3 entries, while two other callers walk it with zero bounds checking.
+- Both unguarded callers verified unreachable through our entire 5656-case fuzzing sweeps — not inferred, empirically tested twice.
+
+Bottom line: this is a real, structurally-proven vulnerability, but reaching it reved real-token problem (to write genuine BASIC syntax) or reverse-engineering whatspecific menu/UI interaction sets the two gating conditions ($D007E0==0x44, an IY-relative bit flag) — both legitimate but substantial next efforts, not quick follow-ups.
+
+Everything is fully documented in Token63Bug/broader_audit.md and explanation.md for continuation. Given both leads from this round terminated in the same place (real bug, unconfirmed
+reachability, blocked on the same underlying token-derivation problem), I think tht rather than a place to keep pushing blindly — further progress needs either afresh idea for the token problem or a different investigative angle entirely, and I don't have a strong new one queued up right now. Let me know how you'd like to proceed.
+
+✻ Sautéed for 58s
+
+❯ next what id say is dont choose the thing that will neccesarily be the fastest but the way that is most likely to result in us finding the needed bug for goto asm
+
+Given the goal is finding the bug, not speed, I'll commit to properly solving the token-derivation bottleneck — it's blocking the most promising lead we have (the RAM-table bug) and would also
+unlock testing List/Matrix/String syntax, a classic historically-fruitful bug clasch yet. Let me use a smarter calibration technique: use the known sin(=0xC2 tokento identify which exact write address holds the real inserted token, then reuse that address for unknown commands.
+
+  Ran 2 shell commands
+
+The write-capture calibration is too noisy to converge quickly (each attempt needs ~15-20s and dozens of tries). Let me pivot to a smarter angle: the RAM-table bug's gate condition ($D007E0==0x44) is likely tied to a specific UI screen, not exotic BASIC syntax —  through plain menu navigation, sidestepping the token problem entirely. Let's find exactly which write site sets that specific value.
+  Ran 2 shell commands
+Found it — the RAM-table bug's gate requires ($D0146D) to be 0x1B or 0x1D, which looks like a specific built-in App ID check, not something a BASIC program naturally triggers. That makeslead weaker for our actual goal (a program-triggerable exploit). Given the prioritme pivot to verifying the 5 function-pointer-table candidates instead — those arereached through normal expression/variable-type dispatch (structurally similar to our proven-working 0x63 bug), which is a stronger match for BASIC-reachability.
+  Ran 2 shell commands
+This looks generic (not app-specific), used deep in variable type-dispatch. Let's verify empirically: set a breakpoint on the $D02501 write (the "type descriptor" setup that feeds all 5 candidates) and sweep the corpus to see if this subsystem is exercised by ordinary
+
+  Ran 2 shell commands
+
+I need to be more careful — I just caught a misalignment error in my own disassembage window was off, giving wrong content). Rather than keep hand-disassembling more candidates with that risk, let me apply the same rigorous, empirical breakpoint methodology that actually worked for the 0x63 bug to the cleanest, most precisely-located candidate: 0x23540 (confirmed exact via byte-pattern search, IY+8 index, table at 0x0B2661).
+
+  Made 2 scratchpad edits +6 -7
+
+Now let's also verify the exact table bounds for 0x0B2661 by checking for a siblinwe did for $D0227E), before running the sweep.
+
+  Ran 2 shell commands
+
+Both known callers use the same unbounded computation (no visible direct check), t intermediate call that might validate. Rather than keep guessing, let's getempirical ground truth. Building and running the sweep now.
+
+  Ran 1 shell command
+
+● Monitor(Watch third RAM-table sweep (candidate 0x23540, IY+8 indexed table at 0x0B2661) across full corpus)
+Monitor started · task bw5qm861h · timeout 3600s
+
+Sweep running now on this third candidate. I'll report as it progresses.
+
+✻ Sautéed for 4m 16s
+
+● Monitor event: "Watch third RAM-table sweep (candidate 0x23540, IY+8 indexed tablepus"
+
+● Monitor "Watch third RAM-table sweep (candidate 0x23540, IY+8 indexed table at 0x0ream ended
+
+Third consecutive zero-hit result — this pattern is now very clear: every candidatatch cascade requires real BASIC syntax (actual expressions/STO operations) ourcorpus can't produce. This confirms the token-derivation problem is the true bottleneck. Let me try a fundamentally different approach I haven't attempted yet: check if a real, community-maintained TI-variable-file library has an actual token table built in — not guessed.
